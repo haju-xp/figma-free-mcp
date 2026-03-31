@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Figma Free MCP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,sans-serif;font-size:11px;background:#1E293B;color:#E2E8F0;overflow:hidden}
+.bar{display:flex;align-items:center;gap:8px;padding:6px 10px;height:32px}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background 0.3s}
+.dot.on{background:#22C55E}
+.dot.off{background:#EF4444}
+.dot.wait{background:#F59E0B}
+.label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.ch{font-weight:700;color:#86EFAC;cursor:pointer;text-decoration:underline}
+.ch:hover{text-decoration:none}
+.btn{border:none;background:none;color:#94A3B8;cursor:pointer;font-size:10px;padding:2px 6px;border-radius:4px}
+.btn:hover{background:#334155;color:#fff}
+.expand{display:none;padding:8px 10px;border-top:1px solid #334155;flex-direction:column;gap:8px}
+.expand.open{display:flex}
+.btn-row{display:flex;gap:6px}
+.btn-action{flex:1;height:28px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;transition:all 0.15s}
+.btn-connect{background:#2563EB;color:#fff}
+.btn-connect:hover{background:#1D4ED8}
+.btn-connect:disabled{background:#334155;color:#64748B;cursor:not-allowed}
+.btn-disconnect{background:transparent;color:#94A3B8;border:1px solid #475569}
+.btn-disconnect:hover{border-color:#94A3B8;color:#E2E8F0}
+.btn-disconnect:disabled{opacity:0.3;cursor:not-allowed}
+.prog-bg{height:3px;background:#334155;border-radius:2px}
+.prog-fill{height:3px;background:#2563EB;border-radius:2px;width:0%;transition:width 0.3s}
+.prog-info{display:flex;justify-content:space-between;font-size:10px;color:#64748B}
+.foot{font-size:9px;color:#475569;text-align:center}
+</style>
+</head>
+<body>
+<div class="bar" id="bar">
+  <span class="dot wait" id="dot"></span>
+  <span class="label" id="label">Connecting...</span>
+  <button class="btn" id="btn-toggle" title="Expand">&#9660;</button>
+</div>
+<div class="expand" id="expand">
+  <div class="btn-row">
+    <button class="btn-action btn-connect" id="btn-conn" disabled>Reconnect</button>
+    <button class="btn-action btn-disconnect" id="btn-disc" disabled>Disconnect</button>
+  </div>
+  <div class="prog-bg"><div class="prog-fill" id="prog-bar"></div></div>
+  <div class="prog-info"><span id="prog-msg">Ready</span><span id="prog-pct">0%</span></div>
+  <div class="foot">figma-free-mcp v1.0 &middot; 82+ tools</div>
+</div>
+
+<script>
+class P{
+  constructor(){
+    this.s={connected:false,socket:null,port:3055,pending:new Map(),channel:null};
+    this.dot=document.getElementById("dot");
+    this.label=document.getElementById("label");
+    this.btnT=document.getElementById("btn-toggle");
+    this.btnC=document.getElementById("btn-conn");
+    this.btnD=document.getElementById("btn-disc");
+    this.expand=document.getElementById("expand");
+    this.progBar=document.getElementById("prog-bar");
+    this.progMsg=document.getElementById("prog-msg");
+    this.progPct=document.getElementById("prog-pct");
+    this.btnT.onclick=()=>{
+      const opening=!this.expand.classList.contains("open");
+      this.expand.classList.toggle("open");
+      this.btnT.innerHTML=opening?"&#9650;":"&#9660;";
+      parent.postMessage({pluginMessage:{type:"resize",width:opening?280:200,height:opening?140:44}},"*");
+    };
+    this.btnC.onclick=()=>this.connect();
+    this.btnD.onclick=()=>this.disconnect();
+    this.label.onclick=(e)=>{if(e.target.classList.contains("ch"))this.copy(e.target.textContent)};
+    window.onmessage=(e)=>this.onFigma(e.data.pluginMessage);
+    setTimeout(()=>this.connect(),500);
+  }
+  set(type,html){
+    this.dot.className="dot "+(type==="connected"?"on":type==="connecting"?"wait":"off");
+    this.label.innerHTML=html;
+    this.btnC.disabled=(type==="connected");
+    this.btnD.disabled=(type!=="connected");
+  }
+  connect(port=3055){
+    if(this.s.connected&&this.s.socket)return;
+    this.set("connecting","Connecting...");
+    this.s.port=port;
+    this.s.socket=new WebSocket("ws://localhost:"+port);
+    this.s.socket.onopen=()=>{
+      const ch=this.genCh();
+      this.s.channel=ch;
+      this.s.socket.send(JSON.stringify({type:"join",channel:ch.trim()}));
+    };
+    this.s.socket.onmessage=(e)=>{
+      try{
+        const d=JSON.parse(e.data);
+        if(d.type==="system"&&d.message&&d.message.result){
+          this.s.connected=true;
+          this.set("connected","Connected <span class='ch'>"+d.channel+"</span>");
+          parent.postMessage({pluginMessage:{type:"notify",message:"Connected: "+d.channel}},"*");
+        }else if(d.type==="error"){
+          this.set("disconnected","Error: "+d.message);
+          this.s.socket.close();
+        }
+        this.onSocket(d);
+      }catch(err){}
+    };
+    this.s.socket.onclose=()=>{this.s.connected=false;this.s.socket=null;this.set("disconnected","Disconnected");};
+    this.s.socket.onerror=()=>{this.set("disconnected","Server not found");this.s.connected=false;this.s.socket=null;};
+  }
+  disconnect(){
+    if(this.s.socket){this.s.socket.close();this.s.socket=null;this.s.connected=false;}
+  }
+  onSocket(p){
+    const d=p.message;if(!d)return;
+    if(d.id&&this.s.pending.has(d.id)){const{resolve,reject}=this.s.pending.get(d.id);this.s.pending.delete(d.id);if(d.error)reject(new Error(d.error));else resolve(d.result);return;}
+    if(d.command){parent.postMessage({pluginMessage:{type:"execute-command",id:d.id,command:d.command,params:d.params}},"*");}
+  }
+  onFigma(m){
+    if(!m)return;
+    switch(m.type){
+      case"connection-status":this.set(m.connected?"connected":"disconnected",m.message);break;
+      case"auto-connect":this.connect();break;
+      case"auto-disconnect":this.disconnect();break;
+      case"command-result":this.sendOk(m.id,m.result);break;
+      case"command-error":this.sendErr(m.id,m.error);break;
+      case"command_progress":this.prog(m);this.sendProg(m);break;
+    }
+  }
+  sendOk(id,r){if(!this.s.connected||!this.s.socket)return;this.s.socket.send(JSON.stringify({id,type:"message",channel:this.s.channel,message:{id,result:r}}));}
+  sendErr(id,e){if(!this.s.connected||!this.s.socket)return;this.s.socket.send(JSON.stringify({id,type:"message",channel:this.s.channel,message:{id,error:e}}));}
+  prog(d){this.expand.classList.add("open");this.btnT.innerHTML="&#9650;";parent.postMessage({pluginMessage:{type:"resize",width:280,height:140}},"*");const p=d.progress||0;this.progBar.style.width=p+"%";this.progPct.textContent=p+"%";this.progMsg.textContent=d.message||"Working...";if(d.status==="completed")setTimeout(()=>{this.expand.classList.remove("open");this.btnT.innerHTML="&#9660;";parent.postMessage({pluginMessage:{type:"resize",width:200,height:44}},"*");},3000);}
+  sendProg(d){if(!this.s.connected||!this.s.socket)return;this.s.socket.send(JSON.stringify({id:d.commandId,type:"progress_update",channel:this.s.channel,message:{id:d.commandId,type:"progress_update",data:d}}));}
+  copy(t){try{navigator.clipboard.writeText(t).then(()=>parent.postMessage({pluginMessage:{type:"notify",message:"Copied: "+t}},"*"))}catch(e){const a=document.createElement("textarea");a.value=t;a.style.position="fixed";a.style.left="-9999px";document.body.appendChild(a);a.select();document.execCommand("copy");document.body.removeChild(a);}}
+  genCh(){const c="abcdefghijklmnopqrstuvwxyz0123456789";let r="";for(let i=0;i<8;i++)r+=c.charAt(Math.floor(Math.random()*c.length));return r;}
+}
+new P();
+</script>
+</body>
+</html>

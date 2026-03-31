@@ -1,0 +1,61 @@
+{
+  "name": "figma-free-mcp",
+  "description": "Enhanced MCP server for Figma Free — Design System Sync, Page Manager, Code-to-Figma",
+  "version": "1.0.0",
+  "module": "dist/server.js",
+  "main": "dist/server.js",
+  "bin": {
+    "figma-free-mcp": "scripts/cli.js",
+    "figma-free-mcp-server": "dist/server.js",
+    "figma-free-mcp-socket": "dist/socket.js"
+  },
+  "files": [
+    "dist",
+    "scripts/cli.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "scripts": {
+    "start": "node dist/server.js",
+    "socket": "node dist/socket.js",
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "dev": "tsup --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/ws": "^8.5.10",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "uuid": "latest",
+    "ws": "latest",
+    "zod": "^3.25.0"
+  },
+  "keywords": [
+    "figma",
+    "mcp",
+    "free",
+    "design-system",
+    "sync",
+    "claude",
+    "ai",
+    "design",
+    "automation",
+    "code-to-figma"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  }
+}
