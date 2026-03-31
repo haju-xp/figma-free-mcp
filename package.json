@@ -52,10 +52,14 @@
     "automation",
     "code-to-figma"
   ],
-  "author": "",
+  "author": "haju-xp",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/haju-xp/figma-free-mcp.git"
+  },
+  "homepage": "https://github.com/haju-xp/figma-free-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/haju-xp/figma-free-mcp/issues"
   }
 }

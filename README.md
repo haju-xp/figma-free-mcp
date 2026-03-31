@@ -65,7 +65,7 @@ figma-free-mcp
 
 ### Option 3: From source
 ```bash
-git clone https://github.com/YOUR_USERNAME/figma-free-mcp.git
+git clone https://github.com/haju-xp/figma-free-mcp.git
 cd figma-free-mcp
 npm install
 npm run build
