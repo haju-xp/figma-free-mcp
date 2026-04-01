@@ -1,171 +1,185 @@
-# figma-free-mcp
+# 🎨 Figma MCP for Free Plan
 
-**Enhanced MCP server for Figma Free** — all the power of AI-assisted design, no paid plan required.
+> Connect Claude to Figma with zero friction.
+> No paid plan. No channel ID copy-paste. Just works.
 
-🔌 **Auto-connect** — Claude detects your open Figma file automatically. No more copying channel IDs!
+[![npm](https://img.shields.io/npm/v/figma-free-mcp)](https://www.npmjs.com/package/figma-free-mcp)
+[![smithery](https://img.shields.io/badge/smithery-figma--free--mcp-orange)](https://smithery.ai/server/haju-xp/figma-free-mcp)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
-Built on top of [ClaudeTalkToFigma](https://github.com/arinspunk/claude-talk-to-figma-mcp) with auto-connect + 12 additional tools for design system synchronization, page management, and code-to-Figma conversion.
+---
 
-## Why?
+## ✨ Why this exists
 
-- Figma's official MCP requires a **paid plan** (Dev Mode) — this works on **free Figma**
-- `ClaudeTalkToFigma` requires manually copying a channel ID every time — **this auto-detects**
-- **figma-free-mcp** = auto-connect + 70+ core tools + 12 enhanced tools = **82+ tools, zero friction**
+| | Figma Official MCP | ClaudeTalkToFigma | **figma-free-mcp** |
+|---|---|---|---|
+| Free plan | ❌ Paid only | ✅ | ✅ |
+| Auto-connect | ✅ | ❌ Manual channel ID | ✅ **Auto-detect** |
+| Tools | Many | 70+ | **100+** |
+| One-line install | ❌ | ❌ | ✅ |
 
-## Features
+---
 
-### Core (from ClaudeTalkToFigma)
-- Create/modify frames, text, shapes, components
-- Auto layout, effects, gradients, images, SVG
-- Variables, styles, FigJam elements
-- 70+ tools total
+## 🚀 Quick Start (3 steps)
 
-### Design System Sync (NEW)
-| Tool | Description |
-|------|-------------|
-| `sync_css_to_figma` | Read CSS variables and create Figma variable collections |
-| `sync_figma_to_css` | Export Figma variables to CSS custom properties file |
-| `compare_design_tokens` | Diff CSS vs Figma variables, report mismatches |
-| `apply_design_system` | Parse a design policy markdown and apply to Figma |
-| `audit_design_consistency` | Detect policy violations in Figma file |
-
-### Page Manager (NEW)
-| Tool | Description |
-|------|-------------|
-| `list_all_pages_detailed` | List pages with frame counts + duplicate detection |
-| `deduplicate_pages` | Auto-merge/remove duplicate pages |
-| `organize_pages` | Sort pages by number prefix or alphabetically |
-| `cleanup_empty_pages` | Find and remove empty pages |
-
-### Code-to-Figma (NEW)
-| Tool | Description |
-|------|-------------|
-| `react_to_figma` | Analyze React/TSX and auto-create Figma frames |
-| `css_class_to_figma_style` | Convert CSS classes to Figma styles |
-| `generate_component_variants` | Create hover/active/disabled variants from a component |
-
-## Prerequisites
-
-1. **Figma Desktop App** (free account works)
-2. **figma-free-mcp plugin** — our custom plugin (included in this repo, see below)
-3. **Node.js** 20+
-
-## Installation
-
-### Option 1: npx (recommended)
-```bash
-npx figma-free-mcp
-```
-
-### Option 2: Global install
-```bash
-npm install -g figma-free-mcp
-figma-free-mcp
-```
-
-### Option 3: From source
-```bash
-git clone https://github.com/haju-xp/figma-free-mcp.git
-cd figma-free-mcp
-npm install
-npm run build
-node dist/server.js
-```
-
-## Setup (1 command)
+### Step 1 — Install MCP + download plugin
 
 ```bash
-npx figma-free-mcp setup
+npx figma-free-mcp@latest setup
 ```
 
-That's it. Auto-registers in Claude Code. No config files to edit.
+This will:
+- ✅ Register MCP in Claude Desktop automatically
+- ✅ Download the Figma plugin to `~/.figma-free-mcp/plugin/`
+- ✅ Show you the exact manifest path
 
-To uninstall:
-```bash
-npx figma-free-mcp uninstall
-```
+### Step 2 — Install the Figma plugin (one-time)
 
-## Plugin Install (One-time)
+1. Open **Figma Desktop**
+2. Menu → **Plugins** → **Development** → **Import plugin from manifest...**
+3. Select the path shown in Step 1:
+   ```
+   C:\Users\[YourName]\.figma-free-mcp\plugin\manifest.json
+   ```
+4. Run **"Figma Free MCP"** plugin in Figma — it auto-connects!
 
-1. Clone this repo: `git clone https://github.com/hajux/figma-free-mcp.git`
-2. Open **Figma Desktop**
-3. Menu → **Plugins** → **Development** → **Import plugin from manifest...**
-4. Select `plugin/manifest.json`
-5. Run **"Figma Free MCP"** plugin — it auto-connects to the relay server
+### Step 3 — Start the relay server
 
-> The plugin shows a compact status bar (32px). Click ▼ to expand Connect/Disconnect controls.
-
-## Usage
-
-### 1. Start the WebSocket relay (keep running)
+Open a terminal and keep it running:
 
 ```bash
 npx --package figma-free-mcp figma-free-mcp-socket
 ```
 
-### 2. Open Figma Desktop + run the **Figma Free MCP** plugin
+> ⚠️ Keep this terminal open while using Claude with Figma.
 
-### 3. Talk to Claude (no channel ID needed!)
-```
-Figma 연결해줘
-```
-Auto-connect detects the active plugin and connects automatically.
-No more copying channel IDs!
+---
 
-If multiple Figma files are open, it will ask which one to connect to.
+## 💬 Usage
 
-### Example Commands
-
-**Sync CSS to Figma:**
-```
-Use sync_css_to_figma with cssFilePath: "./src/styles/globals.css"
-```
-
-**Find duplicate pages:**
-```
-Use list_all_pages_detailed to check for duplicates
-```
-
-**Clean up duplicates:**
-```
-Use deduplicate_pages with dryRun: false
-```
-
-**Convert React component to Figma:**
-```
-Use react_to_figma with filePath: "./src/components/Button.tsx"
-```
-
-**Audit design consistency:**
-```
-Use audit_design_consistency to check for policy violations
-```
-
-## Architecture
+Once everything is running, just talk to Claude naturally:
 
 ```
-Claude Code <--(stdio/MCP)--> MCP Server <--(WebSocket)--> Figma Plugin
-                                  |
-                           82+ registered tools
-                           ├── Core (70+)
-                           ├── Design Sync (5)
-                           ├── Page Manager (4)
-                           └── Code-to-Figma (3)
+"Figma에 버튼 컴포넌트 만들어줘"
+"중복 페이지 찾아서 정리해줘"
+"globals.css 색상 토큰을 Figma 변수로 싱크해줘"
+"이 React 컴포넌트를 Figma 프레임으로 변환해줘"
 ```
 
-## Development
+Claude automatically detects your open Figma file — **no channel ID needed!**
+
+---
+
+## 🛠️ All Tools (100+)
+
+### 🔌 Auto-Connect
+| Tool | Description |
+|------|-------------|
+| `auto_connect` | Auto-detect active Figma sessions and connect |
+| `list_active_channels` | List all open Figma plugin sessions |
+
+### 📄 Document & Pages
+`get_document_info`, `get_pages`, `get_selection`, `get_node_info`, `get_nodes_info`, `scan_text_nodes`, `get_styles`, `get_local_components`, `get_remote_components`, `get_variables` and more
+
+### 🖼️ Creation
+`create_frame`, `create_rectangle`, `create_ellipse`, `create_text`, `create_page`, `create_component_from_node`, `create_component_instance`, `create_component_set` and more
+
+### ✏️ Modification
+`set_fill_color`, `set_stroke_color`, `set_text_content`, `set_font_size`, `set_corner_radius`, `set_auto_layout`, `move_node`, `resize_node`, `delete_node`, `clone_node` and more
+
+### 🎨 Design System Sync
+| Tool | Description |
+|------|-------------|
+| `sync_css_to_figma` | CSS variables → Figma variable collections |
+| `sync_figma_to_css` | Figma variables → CSS custom properties |
+| `compare_design_tokens` | Diff report between CSS and Figma |
+| `apply_design_system` | Apply design policy doc to Figma |
+| `audit_design_consistency` | Find policy violations in Figma file |
+
+### 📋 Page Manager
+| Tool | Description |
+|------|-------------|
+| `list_all_pages_detailed` | All pages + frame count + duplicate detection |
+| `deduplicate_pages` | Auto-merge/remove duplicate pages |
+| `organize_pages` | Sort pages by number or alphabetically |
+| `cleanup_empty_pages` | Remove empty pages |
+
+### ⚡ Code to Figma
+| Tool | Description |
+|------|-------------|
+| `react_to_figma` | React/TSX component → Figma frame |
+| `css_class_to_figma_style` | CSS classes → Figma local styles |
+| `generate_component_variants` | Generate hover/active/disabled variants |
+
+---
+
+## 🏗️ Architecture
+
+```
+Claude Desktop
+    │
+    │ stdio (MCP)
+    ▼
+figma-free-mcp server (100+ tools)
+    │
+    │ WebSocket (port 3055)
+    ▼
+Figma Plugin (auto-connect)
+    │
+    │ Figma API
+    ▼
+Your Figma File ✨
+```
+
+---
+
+## ⚙️ Commands Reference
 
 ```bash
-npm install
-npm run dev          # Watch mode
-npm run build        # Production build
-npm test             # Run tests
+# Install & register MCP
+npx figma-free-mcp@latest setup
+
+# Start WebSocket relay server
+npx --package figma-free-mcp figma-free-mcp-socket
+
+# Uninstall
+npx figma-free-mcp@latest uninstall
 ```
 
-## License
+---
 
-MIT
+## ❓ FAQ
 
-## Credits
+**Q. Do I need a paid Figma plan?**
+A. No. Works with free Figma accounts.
 
-Built on top of [ClaudeTalkToFigma](https://github.com/arinspunk/claude-talk-to-figma-mcp) by Xulio Ze (MIT License).
+**Q. Do I need Claude Pro?**
+A. Any Claude Desktop plan works.
+
+**Q. The plugin shows "Disconnected"**
+A. Make sure the relay server is running: `npx --package figma-free-mcp figma-free-mcp-socket`
+
+**Q. Multiple Figma files are open**
+A. Claude will ask which file to connect to.
+
+**Q. Port 3055 is already in use**
+A. Kill the existing process: `netstat -ano | findstr :3055` then `taskkill /PID [number] /F`
+
+---
+
+## ⚠️ License & Usage
+
+MIT License — free to use and modify.
+
+✅ Personal & commercial use allowed
+✅ Modification allowed
+❌ Claiming as your own work prohibited
+❌ Removing author credit prohibited
+
+© 2026 [haju-xp](https://github.com/haju-xp)
+
+---
+
+## 🙏 Credits
+
+Built on top of [claude-talk-to-figma-mcp](https://github.com/arinspunk/claude-talk-to-figma-mcp) by arinspunk (MIT License).
