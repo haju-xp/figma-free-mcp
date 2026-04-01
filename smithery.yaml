@@ -1,0 +1,13 @@
+name: figma-free-mcp
+description: Enhanced MCP server for Figma Free — auto-connect + 82+ tools. No Dev Mode or paid plan required.
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties: {}
+  commandFunction: |-
+    () => ({
+      command: "npx",
+      args: ["-y", "--package", "figma-free-mcp", "figma-free-mcp-server"]
+    })
