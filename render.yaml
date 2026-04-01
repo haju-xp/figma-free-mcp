@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: figma-free-mcp
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: node dist/http-server.js
+    envVars:
+      - key: PORT
+        value: 8080
+    plan: free

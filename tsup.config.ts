@@ -21,4 +21,14 @@ export default defineConfig([
     sourcemap: true,
     dts: false,
   },
+  {
+    entry: ["src/http-server.ts"],
+    format: ["esm"],
+    target: "node20",
+    outDir: "dist",
+    splitting: false,
+    sourcemap: true,
+    dts: false,
+    banner: { js: "#!/usr/bin/env node" },
+  },
 ]);
