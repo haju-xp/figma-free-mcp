@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * Main entry point for the Figma MCP Server
  * This file initializes the server, connects to Figma,
