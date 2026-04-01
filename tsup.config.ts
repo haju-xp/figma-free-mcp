@@ -20,6 +20,7 @@ export default defineConfig([
     splitting: false,
     sourcemap: true,
     dts: false,
+    banner: { js: "#!/usr/bin/env node" },
   },
   {
     entry: ["src/http-server.ts"],

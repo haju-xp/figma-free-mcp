@@ -100,7 +100,7 @@ npx figma-free-mcp uninstall
 ### 1. Start the WebSocket relay (keep running)
 
 ```bash
-npx figma-free-mcp-socket
+npx --package figma-free-mcp figma-free-mcp-socket
 ```
 
 ### 2. Open Figma Desktop + run the **Figma Free MCP** plugin
