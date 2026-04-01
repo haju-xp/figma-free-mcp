@@ -162,11 +162,17 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     logger.info(`Client disconnected: ${clientId}`);
     stats.activeConnections--;
-    // 모든 채널에서 제거
+    // 모든 채널에서 제거 + 빈 채널 삭제
     channels.forEach((clients, channelName) => {
       if (clients.delete(ws)) {
         logger.debug(`Removed ${clientId} from channel ${channelName}`);
-        // 다른 클라이언트에 알림
+        // 빈 채널이면 Map에서 완전히 삭제
+        if (clients.size === 0) {
+          channels.delete(channelName);
+          logger.info(`Channel ${channelName} removed (empty)`);
+          return;
+        }
+        // 남은 클라이언트에 알림
         clients.forEach((client) => {
           if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({ type: "system", message: "A client has left the channel", channel: channelName }));
