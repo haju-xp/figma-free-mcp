@@ -1,7 +1,7 @@
 {
   "name": "figma-free-mcp",
   "description": "Enhanced MCP server for Figma Free — Design System Sync, Page Manager, Code-to-Figma",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "module": "dist/server.js",
   "main": "dist/server.js",
   "bin": {
