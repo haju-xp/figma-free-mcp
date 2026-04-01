@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * HTTP server entry point for PlayMCP / cloud deployment
  * Supports Streamable HTTP transport (MCP spec 2025-03-26)
