@@ -10,10 +10,10 @@ const PORT = 3055;
 
 // 로거
 const logger = {
-  info: (msg: string, ...args: unknown[]) => console.log(`[INFO] ${msg}`, ...args),
-  debug: (msg: string, ...args: unknown[]) => console.log(`[DEBUG] ${msg}`, ...args),
-  warn: (msg: string, ...args: unknown[]) => console.warn(`[WARN] ${msg}`, ...args),
-  error: (msg: string, ...args: unknown[]) => console.error(`[ERROR] ${msg}`, ...args),
+  info: (msg: string, ...args: unknown[]) => process.stderr.write(`[INFO] ${msg} ${args.join(" ")}\n`),
+  debug: (msg: string, ...args: unknown[]) => process.stderr.write(`[DEBUG] ${msg} ${args.join(" ")}\n`),
+  warn: (msg: string, ...args: unknown[]) => process.stderr.write(`[WARN] ${msg} ${args.join(" ")}\n`),
+  error: (msg: string, ...args: unknown[]) => process.stderr.write(`[ERROR] ${msg} ${args.join(" ")}\n`),
 };
 
 // 채널별 클라이언트 관리
