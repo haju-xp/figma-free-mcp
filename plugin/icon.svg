@@ -1,0 +1,16 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="256" height="256" rx="48" fill="#1E1E2E"/>
+
+  <!-- Figma-style circles -->
+  <circle cx="96" cy="96" r="36" fill="#FF7262"/>
+  <circle cx="160" cy="96" r="36" fill="#A259FF"/>
+  <circle cx="96" cy="160" r="36" fill="#1ABCFE"/>
+  <circle cx="160" cy="160" r="36" fill="#0ACF83"/>
+
+  <!-- Center overlap -->
+  <circle cx="128" cy="128" r="24" fill="#FF7262" opacity="0.9"/>
+
+  <!-- MCP lightning bolt -->
+  <path d="M134 108 L120 132 H130 L122 152 L142 124 H131 L134 108Z" fill="white" opacity="0.95"/>
+</svg>
