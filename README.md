@@ -1,4 +1,5 @@
 # 🎨 Figma MCP for Free Plan
+https://smithery.ai/servers/haju-xp/figma-free-mcp
 
 > Connect Claude to Figma with zero friction.
 > No paid plan. No channel ID copy-paste. Just works.
