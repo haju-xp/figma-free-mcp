@@ -70,6 +70,15 @@ const httpServer = http.createServer((req, res) => {
 // WebSocket 서버
 const wss = new WebSocketServer({ server: httpServer });
 
+// WSS가 httpServer 에러를 re-emit하므로 별도 핸들러 필요
+wss.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    // httpServer.on("error")에서 처리됨 — 여기서는 무시
+    return;
+  }
+  logger.error(`WebSocketServer error: ${err.message}`);
+});
+
 wss.on("connection", (ws) => {
   stats.totalConnections++;
   stats.activeConnections++;
@@ -186,6 +195,40 @@ wss.on("connection", (ws) => {
     stats.errors++;
     logger.error(`WebSocket error for ${clientId}: ${error.message}`);
   });
+});
+
+// 포트 충돌 감지 → 기존 프로세스 확인 후 재시도
+httpServer.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    logger.warn(`Port ${PORT} is already in use. Checking if existing server is healthy...`);
+
+    // 기존 서버 상태 확인
+    const checkReq = http.get(`http://localhost:${PORT}/status`, (res) => {
+      let body = "";
+      res.on("data", (chunk: Buffer) => (body += chunk.toString()));
+      res.on("end", () => {
+        logger.info(`Existing server is running: ${body}`);
+        logger.info("Exiting — use a different port or stop the existing server first.");
+        process.exit(0);
+      });
+    });
+
+    checkReq.on("error", () => {
+      // 기존 서버가 응답하지 않으면 좀비 프로세스일 수 있음
+      logger.error(`Port ${PORT} is occupied but not responding. A zombie process may be holding the port.`);
+      logger.error("Try: netstat -ano | findstr :3055  → then  taskkill /PID <pid> /F");
+      process.exit(1);
+    });
+
+    checkReq.setTimeout(3000, () => {
+      checkReq.destroy();
+      logger.error(`Port ${PORT} check timed out. Kill the process manually.`);
+      process.exit(1);
+    });
+  } else {
+    logger.error(`HTTP server error: ${err.message}`);
+    process.exit(1);
+  }
 });
 
 httpServer.listen(PORT, () => {

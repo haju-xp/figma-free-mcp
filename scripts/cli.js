@@ -76,12 +76,6 @@ function setupClaudeDesktop() {
     args: ["-y", "--package", "figma-free-mcp", "figma-free-mcp-server"],
   };
 
-  // 소켓 서버도 Claude Desktop과 함께 자동 실행
-  config.mcpServers["figma-free-mcp-socket"] = {
-    command: "npx",
-    args: ["--package", "figma-free-mcp", "figma-free-mcp-socket"],
-  };
-
   writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
   console.log(`\n✓ Added to Claude Desktop config: ${configPath}`);
 }
@@ -92,12 +86,16 @@ function removeClaudeDesktop() {
     console.log("No Claude Desktop config found.");
     return;
   }
-  const config = JSON.parse(readFileSync(configPath, "utf-8"));
-  if (config.mcpServers) {
-    delete config.mcpServers["figma-free-mcp"];
-    delete config.mcpServers["figma-free-mcp-socket"];
-    writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
-    console.log("Removed figma-free-mcp from Claude Desktop config.");
+  try {
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    if (config.mcpServers) {
+      delete config.mcpServers["figma-free-mcp"];
+      delete config.mcpServers["figma-free-mcp-socket"];
+      writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+      console.log("Removed figma-free-mcp from Claude Desktop config.");
+    }
+  } catch (err) {
+    console.error(`Failed to update Claude Desktop config: ${err.message}`);
   }
 }
 
@@ -124,12 +122,14 @@ if (command === "setup") {
     console.log(`\n✓ Plugin downloaded to: ${pluginDir}`);
     console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("Next steps:");
-    console.log("1. Restart Claude Desktop (소켓 서버 자동 실행됨)");
-    console.log("2. Open Figma Desktop");
-    console.log("3. Plugins → Development → Import plugin from manifest...");
-    console.log(`4. Select: ${join(pluginDir, "manifest.json")}`);
-    console.log("5. Run 'Figma Free MCP' plugin in Figma");
-    console.log("6. Done! Claude auto-connects to your Figma file.");
+    console.log("1. Start the relay server in a terminal (keep it running):");
+    console.log("   npx --package figma-free-mcp figma-free-mcp-socket");
+    console.log("2. Restart Claude Desktop");
+    console.log("3. Open Figma Desktop");
+    console.log("4. Plugins → Development → Import plugin from manifest...");
+    console.log(`5. Select: ${join(pluginDir, "manifest.json")}`);
+    console.log("6. Run 'Figma Free MCP' plugin in Figma");
+    console.log("7. Done! Claude auto-connects to your Figma file.");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
   }
 
@@ -144,7 +144,7 @@ if (command === "setup") {
 
 } else {
   console.log(`
-figma-free-mcp — Enhanced MCP for Figma Free (82+ tools)
+figma-free-mcp — Enhanced MCP for Figma Free (100+ tools)
 
 Commands:
   npx figma-free-mcp setup      Register MCP + download Figma plugin

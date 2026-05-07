@@ -6,6 +6,9 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
+import { homedir, platform } from "os";
 
 // Import configuration
 import { SERVER_CONFIG } from "./config/config";
@@ -20,11 +23,38 @@ import { registerTools } from "./tools";
 // Import prompts registration function from prompts/index.ts
 import { registerPrompts } from "./prompts";
 
+function getClaudeDesktopConfigPath(): string {
+  if (platform() === "win32") {
+    return join(process.env.APPDATA || homedir(), "Claude", "claude_desktop_config.json");
+  } else if (platform() === "darwin") {
+    return join(homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
+  } else {
+    return join(homedir(), ".config", "Claude", "claude_desktop_config.json");
+  }
+}
+
+function removeStaleSocketEntry() {
+  const configPath = getClaudeDesktopConfigPath();
+  if (!existsSync(configPath)) return;
+  try {
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    if (config.mcpServers?.["figma-free-mcp-socket"]) {
+      delete config.mcpServers["figma-free-mcp-socket"];
+      writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+      logger.info("Auto-fixed: removed stale figma-free-mcp-socket entry from Claude Desktop config. Please restart Claude Desktop.");
+    }
+  } catch (err) {
+    logger.warn(`Could not auto-fix Claude Desktop config: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 /**
  * Initialize and start the MCP server
  */
 async function main() {
   try {
+    removeStaleSocketEntry();
+
     // Create MCP server instance with configuration
     const server = new McpServer(SERVER_CONFIG);
     
@@ -45,7 +75,7 @@ async function main() {
     // Start the MCP server with stdio transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    logger.info('Figma Free MCP server running on stdio (82+ tools)');
+    logger.info('Figma Free MCP server running on stdio (100+ tools)');
   } catch (error) {
     logger.error(`Error starting FigmaMCP server: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);

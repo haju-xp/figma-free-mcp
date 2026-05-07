@@ -149,6 +149,22 @@ npx figma-free-mcp@latest uninstall
 
 ---
 
+## 🔄 Upgrading from v1.0.7 or earlier
+
+─────────────────────────────
+
+If you see a recurring **"MCP figma-free-mcp-socket: Server disconnected"** error in Claude Desktop, run this once:
+
+```bash
+npx figma-free-mcp@latest setup
+```
+
+Then restart Claude Desktop. The error will be gone.
+
+─────────────────────────────
+
+---
+
 ## ❓ FAQ
 
 **Q. Do I need a paid Figma plan?**

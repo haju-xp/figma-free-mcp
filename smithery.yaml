@@ -1,5 +1,5 @@
 name: figma-free-mcp
-description: Enhanced MCP server for Figma Free — auto-connect + 82+ tools. No Dev Mode or paid plan required.
+description: Enhanced MCP server for Figma Free — auto-connect + 100+ tools. No Dev Mode or paid plan required.
 
 startCommand:
   type: stdio
