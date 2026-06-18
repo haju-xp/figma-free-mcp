@@ -21,7 +21,7 @@ https://smithery.ai/servers/haju-xp/figma-free-mcp
 
 ---
 
-## 🚀 Quick Start (3 steps)
+## 🚀 Quick Start (4 steps)
 
 ### Step 1 — Install MCP + download plugin
 
@@ -30,7 +30,7 @@ npx figma-free-mcp@latest setup
 ```
 
 This will:
-- ✅ Register MCP in Claude Desktop automatically
+- ✅ Register MCP in **Claude Desktop** automatically
 - ✅ Download the Figma plugin to `~/.figma-free-mcp/plugin/`
 - ✅ Show you the exact manifest path
 
@@ -39,20 +39,32 @@ This will:
 1. Open **Figma Desktop**
 2. Menu → **Plugins** → **Development** → **Import plugin from manifest...**
 3. Select the path shown in Step 1:
-   ```
-   C:\Users\[YourName]\.figma-free-mcp\plugin\manifest.json
-   ```
-4. Run **"Figma Free MCP"** plugin in Figma — it auto-connects!
+
+       C:\Users\[YourName]\.figma-free-mcp\plugin\manifest.json
+
+This will:
+- ✅ Register the Figma plugin in your **Figma Desktop**
 
 ### Step 3 — Start the relay server
-
-Open a terminal and keep it running:
 
 ```bash
 npx --package figma-free-mcp figma-free-mcp-socket
 ```
 
-> ⚠️ Keep this terminal open while using Claude with Figma.
+This will:
+- ✅ Start the **WebSocket** relay server between **Claude** and **Figma**
+- ✅ Keep the connection alive while you work
+
+> ⚠️ Must run this BEFORE opening the **Figma plugin**. Keep this terminal open while using **Claude** with **Figma**.
+
+### Step 4 — Open the Figma plugin
+
+1. Open your **Figma** file
+2. Menu → **Plugins** → **Figma Free MCP**
+
+This will:
+- ✅ Auto-connect to the relay server
+- ✅ No channel ID needed
 
 ---
 
