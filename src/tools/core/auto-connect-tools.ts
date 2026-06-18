@@ -8,7 +8,7 @@ export function registerAutoConnectTools(server: McpServer): void {
   // 자동 연결 — Figma 플러그인이 열려있으면 채널 ID 없이 바로 연결
   server.tool(
     "auto_connect",
-    "Automatically detect and connect to an active Figma plugin channel. No channel ID needed.",
+    "Automatically detect and connect to an active Figma plugin channel. No channel ID needed. ALWAYS call this tool first before any other Figma tool. Never ask the user for a channel ID.",
     {},
     async () => {
       try {
