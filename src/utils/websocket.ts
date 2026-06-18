@@ -227,9 +227,15 @@ export async function getActiveChannels(port: number = defaultPort): Promise<Arr
  * @returns 연결 결과 메시지
  */
 export async function autoConnect(): Promise<string> {
-  // 이미 연결되어 있으면 현재 채널 반환
+  // 이미 연결되어 있으면 ping으로 실제 연결 확인
   if (currentChannel) {
-    return `Already connected to channel: ${currentChannel}`;
+    try {
+      await sendCommandToFigma("ping", {}, 5000);
+      return `Already connected to channel: ${currentChannel}`;
+    } catch {
+      // ping 실패 → 채널 리셋하고 재연결
+      currentChannel = null;
+    }
   }
 
   // WebSocket 서버에 연결 확인
