@@ -48,7 +48,7 @@ This will:
 ### Step 3 — Start the relay server
 
 ```bash
-npx --package figma-free-mcp figma-free-mcp-socket
+figma-free-mcp socket
 ```
 
 This will:
@@ -153,7 +153,7 @@ Your Figma File ✨
 npx figma-free-mcp@latest setup
 
 # Start WebSocket relay server
-npx --package figma-free-mcp figma-free-mcp-socket
+figma-free-mcp socket
 
 # Uninstall
 npx figma-free-mcp@latest uninstall
@@ -186,7 +186,7 @@ A. No. Works with free Figma accounts.
 A. Any Claude Desktop plan works.
 
 **Q. The plugin shows "Disconnected"**
-A. Make sure the relay server is running: `npx --package figma-free-mcp figma-free-mcp-socket`
+A. Make sure the relay server is running: `figma-free-mcp socket`
 
 **Q. Multiple Figma files are open**
 A. Claude will ask which file to connect to.
