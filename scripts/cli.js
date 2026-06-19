@@ -106,7 +106,8 @@ if (command === "setup") {
   try {
     execSync("claude mcp add figma-free-mcp -- npx -y figma-free-mcp", { stdio: "inherit" });
     console.log("✓ Registered in Claude Code CLI");
-  } catch {
+    execSync("npm install -g figma-free-mcp", { stdio: "inherit" });
+ } catch {
     console.log("Claude Code CLI not found. Using Claude Desktop config...");
     setupClaudeDesktop();
   }
@@ -142,6 +143,9 @@ if (command === "setup") {
     removeClaudeDesktop();
   }
 
+} else if (command === "socket") {
+  execSync("figma-free-mcp-socket", { stdio: "inherit" });
+
 } else {
   console.log(`
 figma-free-mcp — Enhanced MCP for Figma Free (100+ tools)
@@ -149,5 +153,6 @@ figma-free-mcp — Enhanced MCP for Figma Free (100+ tools)
 Commands:
   npx figma-free-mcp setup      Register MCP + download Figma plugin
   npx figma-free-mcp uninstall  Remove MCP
+  figma-free-mcp socket         Start relay server
   `);
 }
