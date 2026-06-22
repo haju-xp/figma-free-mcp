@@ -51,7 +51,7 @@ body{font-family:-apple-system,sans-serif;font-size:11px;background:#1E293B;colo
 <script>
 class P{
   constructor(){
-    this.s={connected:false,socket:null,port:3055,pending:new Map(),channel:null};
+    this.s={connected:false,socket:null,port:3055,pending:new Map(),channel:null,meta:{}};
     this.dot=document.getElementById("dot");
     this.label=document.getElementById("label");
     this.btnT=document.getElementById("btn-toggle");
@@ -87,7 +87,7 @@ class P{
     this.s.socket.onopen=()=>{
       const ch=this.genCh();
       this.s.channel=ch;
-      this.s.socket.send(JSON.stringify({type:"join",channel:ch.trim()}));
+      this.s.socket.send(JSON.stringify({type:"join",channel:ch.trim(),meta:this.s.meta}));
     };
     this.s.socket.onmessage=(e)=>{
       try{
@@ -118,7 +118,8 @@ class P{
     if(!m)return;
     switch(m.type){
       case"connection-status":this.set(m.connected?"connected":"disconnected",m.message);break;
-      case"auto-connect":this.connect();break;
+      case"auto-connect":this.s.meta={fileKey:m.fileKey,fileName:m.fileName,pageId:m.pageId,pageName:m.pageName};this.connect();break;
+      case"context-change":this.s.meta={fileKey:m.fileKey,fileName:m.fileName,pageId:m.pageId,pageName:m.pageName};if(this.s.connected&&this.s.socket)this.s.socket.send(JSON.stringify({type:"join",channel:this.s.channel,meta:this.s.meta}));break;
       case"auto-disconnect":this.disconnect();break;
       case"command-result":this.sendOk(m.id,m.result);break;
       case"command-error":this.sendErr(m.id,m.error);break;

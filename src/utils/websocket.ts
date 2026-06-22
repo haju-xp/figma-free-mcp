@@ -209,12 +209,20 @@ export function getCurrentChannel(): string | null {
  * @param port - WebSocket 서버 포트
  * @returns 활성 채널 목록
  */
-export async function getActiveChannels(port: number = defaultPort): Promise<Array<{ channel: string; clients: number }>> {
+export interface ActiveChannel {
+  channel: string;
+  clients: number;
+  fileKey?: string;
+  fileName?: string;
+  pageName?: string;
+}
+
+export async function getActiveChannels(port: number = defaultPort): Promise<ActiveChannel[]> {
   const url = `http://localhost:${port}/channels`;
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json() as { channels: Array<{ channel: string; clients: number }> };
+    const data = await response.json() as { channels: ActiveChannel[] };
     return data.channels || [];
   } catch (error) {
     logger.error(`Failed to fetch active channels: ${error instanceof Error ? error.message : String(error)}`);
@@ -263,7 +271,10 @@ export async function autoConnect(): Promise<string> {
   }
 
   // 여러 채널이 있으면 목록 반환
-  const list = channels.map((ch, i) => `  ${i + 1}. ${ch.channel} (${ch.clients} client(s))`).join("\n");
+  const list = channels.map((ch, i) => {
+    const label = ch.fileName ? ` — ${ch.fileName}${ch.pageName ? ` / ${ch.pageName}` : ""}` : "";
+    return `  ${i + 1}. ${ch.channel}${label} (${ch.clients} client(s))`;
+  }).join("\n");
   return `Multiple channels found:\n${list}\n\nUse join_channel with the desired channel ID.`;
 }
 
