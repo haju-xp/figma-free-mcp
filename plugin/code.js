@@ -76,9 +76,24 @@ figma.ui.onmessage = async (msg) => {
   }
 };
 
+// Helper: collect current file/page identity so the relay can label channels
+function getContextMeta() {
+  return {
+    fileKey: figma.fileKey || figma.root.id,
+    fileName: figma.root.name,
+    pageId: figma.currentPage.id,
+    pageName: figma.currentPage.name,
+  };
+}
+
 // Listen for plugin commands from menu
 figma.on("run", ({ command }) => {
-  figma.ui.postMessage({ type: "auto-connect" });
+  figma.ui.postMessage(Object.assign({ type: "auto-connect" }, getContextMeta()));
+});
+
+// Notify UI when the active page changes so channel metadata stays fresh
+figma.on("currentpagechange", () => {
+  figma.ui.postMessage(Object.assign({ type: "context-change" }, getContextMeta()));
 });
 
 // Update plugin settings
