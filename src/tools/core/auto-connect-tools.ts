@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { autoConnect, getActiveChannels, joinChannel } from "../../utils/websocket.js";
+import { autoConnect, getActiveChannels, joinChannel, sendCommandToFigma } from "../../utils/websocket.js";
+import { FigmaCommand } from "../../types/index.js";
 
 export function registerAutoConnectTools(server: McpServer): void {
   server.tool(
@@ -75,6 +76,47 @@ export function registerAutoConnectTools(server: McpServer): void {
       } catch (error) {
         return {
           content: [{ type: "text" as const, text: `connect_to_file failed: ${error instanceof Error ? error.message : String(error)}` }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "run_on_file",
+    "Run a single Figma command on a specific open file WITHOUT switching the active channel. Use this to edit multiple files concurrently in one session: call it repeatedly with different fileName values. The target file must have its own plugin instance running. params is the same JSON you would pass to the matching tool.",
+    {
+      fileName: z.string().describe("Full or partial file name of the target file (case-insensitive)."),
+      command: z.string().describe("Figma command name, e.g. create_frame, set_text_content, create_rectangle."),
+      params: z.record(z.any()).optional().describe("Parameters object for the command, same shape as the dedicated tool expects."),
+      pageName: z.string().optional().describe("Optional page name to disambiguate when the same file name has multiple channels."),
+      timeoutMs: z.number().optional().describe("Per-command timeout in milliseconds (default 60000)."),
+    },
+    async ({ fileName, command, params, pageName, timeoutMs }) => {
+      try {
+        const channels = await getActiveChannels();
+        if (channels.length === 0) {
+          return { content: [{ type: "text" as const, text: "No active channels. Open the Figma plugin in the target file first." }] };
+        }
+        const needle = fileName.toLowerCase();
+        let matches = channels.filter((c) => c.fileName && c.fileName.toLowerCase().includes(needle));
+        if (pageName) {
+          const pageNeedle = pageName.toLowerCase();
+          matches = matches.filter((c) => c.pageName && c.pageName.toLowerCase().includes(pageNeedle));
+        }
+        if (matches.length === 0) {
+          const available = channels.map((c) => c.fileName ?? c.channel).join(", ");
+          return { content: [{ type: "text" as const, text: `No open file matching "${fileName}". Currently open: ${available}` }] };
+        }
+        if (matches.length > 1) {
+          const list = matches.map((c, i) => `${i + 1}. ${c.fileName} / ${c.pageName ?? "?"} (${c.channel})`).join("\n");
+          return { content: [{ type: "text" as const, text: `Multiple files match "${fileName}". Pass pageName to disambiguate:\n${list}` }] };
+        }
+        const target = matches[0];
+        const result = await sendCommandToFigma(command as FigmaCommand, params ?? {}, timeoutMs ?? 60000, target.channel);
+        return { content: [{ type: "text" as const, text: `[${target.fileName}] ${command} → ${JSON.stringify(result)}` }] };
+      } catch (error) {
+        return {
+          content: [{ type: "text" as const, text: `run_on_file failed: ${error instanceof Error ? error.message : String(error)}` }],
         };
       }
     }
