@@ -156,8 +156,8 @@ wss.on("connection", (ws) => {
         }
 
         channelClients.forEach((client) => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: "broadcast", message: data.message, sender: client === ws ? "You" : "User", channel: channelName }));
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: "broadcast", message: data.message, sender: "User", channel: channelName }));
             stats.messagesSent++;
           }
         });

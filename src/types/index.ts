@@ -28,6 +28,7 @@ export interface PendingRequest {
   reject: (reason: unknown) => void;
   timeout: ReturnType<typeof setTimeout>;
   lastActivity: number;
+  expectedChannel?: string;
 }
 
 // Define WebSocket message structures

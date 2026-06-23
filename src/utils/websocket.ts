@@ -8,6 +8,9 @@ import { FigmaCommand, FigmaResponse, CommandProgressUpdate, PendingRequest, Pro
 let ws: WebSocket | null = null;
 let currentChannel: string | null = null;
 
+// Channels this single ws has joined — enables routing commands to multiple files
+const joinedChannels = new Set<string>();
+
 // Map of pending requests for promise tracking
 const pendingRequests = new Map<string, PendingRequest>();
 
@@ -113,6 +116,12 @@ export function connectToFigma(port: number = defaultPort) {
           pendingRequests.has(myResponse.id)
         ) {
           const request = pendingRequests.get(myResponse.id)!;
+
+          // Reject replies arriving on a different channel than the command targeted
+          if (request.expectedChannel && json.channel && json.channel !== request.expectedChannel) {
+            return;
+          }
+
           clearTimeout(request.timeout);
 
           // Check for error at root level or nested inside result
@@ -178,12 +187,14 @@ export async function joinChannel(channelName: string): Promise<void> {
   try {
     await sendCommandToFigma("join", { channel: channelName });
     currentChannel = channelName;
+    joinedChannels.add(channelName);
 
     try {
       await sendCommandToFigma("ping", {}, 12000);
       logger.info(`Joined channel: ${channelName}`);
     } catch (verificationError) {
       currentChannel = null;
+      joinedChannels.delete(channelName);
       const errorMsg = verificationError instanceof Error
         ? verificationError.message
         : String(verificationError);
@@ -288,7 +299,8 @@ export async function autoConnect(): Promise<string> {
 export function sendCommandToFigma(
   command: FigmaCommand,
   params: unknown = {},
-  timeoutMs: number = 60000
+  timeoutMs: number = 60000,
+  target?: string
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     // If not connected, try to connect first
@@ -298,9 +310,12 @@ export function sendCommandToFigma(
       return;
     }
 
+    // Resolve which channel this command targets (per-command override → default)
+    const targetChannel = command === "join" ? (params as any).channel : (target ?? currentChannel);
+
     // Check if we need a channel for this command
     const requiresChannel = command !== "join";
-    if (requiresChannel && !currentChannel) {
+    if (requiresChannel && !targetChannel) {
       reject(new Error("Must join a channel before sending commands"));
       return;
     }
@@ -309,9 +324,7 @@ export function sendCommandToFigma(
     const request = {
       id,
       type: command === "join" ? "join" : "message",
-      ...(command === "join"
-        ? { channel: (params as any).channel }
-        : { channel: currentChannel }),
+      channel: targetChannel,
       message: {
         id,
         command,
@@ -336,11 +349,12 @@ export function sendCommandToFigma(
       resolve,
       reject,
       timeout,
-      lastActivity: Date.now()
+      lastActivity: Date.now(),
+      expectedChannel: requiresChannel ? (targetChannel as string) : undefined,
     });
 
     // Send the request
-    logger.info(`Sending command to Figma: ${command}`);
+    logger.info(`Sending command to Figma: ${command}${target ? ` (target: ${target})` : ""}`);
     logger.debug(`Request details: ${JSON.stringify(request)}`);
     ws.send(JSON.stringify(request));
   });
