@@ -1,5 +1,48 @@
 name: figma-free-mcp
-description: Enhanced MCP server for Figma Free — auto-connect + 100+ tools. No Dev Mode or paid plan required.
+description: |-
+  Connect Claude to Figma with zero friction.
+  No paid plan. No channel ID copy-paste. Just works.
+
+  ✦ 100+ tools for Figma automation
+  ✦ Auto-connect — Claude detects your open file
+  ✦ Multi-file editing — work on several files at once, by file name (no channel IDs)
+  ✦ Design system sync, page manager, code→Figma
+  ✦ Free Figma plan supported
+
+  ─────────────────────────────
+  ⚡ Quick Start (4 steps)
+
+  1. Install MCP + plugin
+     npx figma-free-mcp@latest setup
+
+  2. Install Figma plugin
+     Figma → Plugins → Development
+     → Import plugin from manifest...
+     → Select: ~/.figma-free-mcp/plugin/manifest.json
+
+  3. Start relay server (keep running BEFORE opening plugin)
+     figma-free-mcp socket
+
+  4. Open Figma plugin
+     Plugins → Figma Free MCP → auto-connects!
+
+  Done! Claude auto-connects to your open Figma file.
+
+  💡 Editing multiple files? Run the plugin in each file, then ask Claude
+     by file name — e.g. "add a button to the Order file, a header to the Billing file".
+
+  ─────────────────────────────
+  📖 Full docs → github.com/haju-xp/figma-free-mcp
+
+  ─────────────────────────────
+  ⚠️ License & Usage
+
+  ✅ Personal & commercial use allowed
+  ✅ Modification allowed
+  ❌ Claiming as your own work prohibited
+  ❌ Removing author credit prohibited
+
+  © 2026 haju, All rights reserved for branding.
 
 startCommand:
   type: stdio
