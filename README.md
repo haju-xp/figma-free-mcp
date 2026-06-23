@@ -83,13 +83,36 @@ Claude automatically detects your open Figma file — **no channel ID needed!**
 
 ---
 
+## 🗂️ Working with Multiple Files (Concurrent Editing)
+
+Edit several Figma files in one session — still **no channel IDs**, just file names.
+
+**Setup:** open each file and run the plugin in it (one plugin instance per file — a Figma limitation: a plugin can only touch the file it runs in).
+
+```
+"어떤 Figma 파일들이 열려 있어?"          → list_active_channels (shows file & page names)
+"미들마일 주문 파일에 버튼 만들어줘"        → connect_to_file then edit, or run_on_file
+"미들마일엔 헤더, 정산관리엔 합계 텍스트 넣어줘"  → runs on both files concurrently
+```
+
+| Tool | When to use |
+|------|-------------|
+| `connect_to_file("name")` | Focus one file — following commands all go there |
+| `run_on_file("name", cmd, params)` | Send one command to a specific file **without** switching — repeat across files to edit them concurrently |
+
+> ⚠️ Each file you want to edit must have its own running plugin instance. A file that's only open in the background (no plugin) cannot be edited.
+
+---
+
 ## 🛠️ All Tools (100+)
 
-### 🔌 Auto-Connect
+### 🔌 Auto-Connect & Multi-File
 | Tool | Description |
 |------|-------------|
 | `auto_connect` | Auto-detect active Figma sessions and connect |
-| `list_active_channels` | List all open Figma plugin sessions |
+| `list_active_channels` | List open Figma plugin sessions **with their file & page names** |
+| `connect_to_file` | Connect by **file name** instead of channel ID (switches the active file) |
+| `run_on_file` | Run one command on a specific file **without switching** — enables concurrent multi-file editing |
 
 ### 📄 Document & Pages
 `get_document_info`, `get_pages`, `get_selection`, `get_node_info`, `get_nodes_info`, `scan_text_nodes`, `get_styles`, `get_local_components`, `get_remote_components`, `get_variables` and more
@@ -189,7 +212,7 @@ A. Any Claude Desktop plan works.
 A. Make sure the relay server is running: `figma-free-mcp socket`
 
 **Q. Multiple Figma files are open**
-A. Claude will ask which file to connect to.
+A. `list_active_channels` shows each session with its file & page name. Use `connect_to_file("name")` to focus one, or `run_on_file("name", ...)` to edit several files concurrently — no channel IDs needed. Each file must have its own running plugin instance.
 
 **Q. Port 3055 is already in use**
 A. Kill the existing process: `netstat -ano | findstr :3055` then `taskkill /PID [number] /F`
