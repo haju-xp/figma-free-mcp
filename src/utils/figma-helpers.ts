@@ -16,17 +16,85 @@ export function rgbaToHex(color: any): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}${a === 255 ? '' : a.toString(16).padStart(2, '0')}`;
 }
 
+/** filterFigmaNode 옵션. */
+export interface FilterNodeOptions {
+  /** 자식 순회 깊이. 0 = 노드 자신만(children 생략), 1 = 직속 자식까지 전개(기본값). */
+  depth?: number;
+  /** 한 레벨당 최대 자식 수. 초과분은 { truncated, omitted } 마커로 대체한다. */
+  childLimit?: number;
+  /** 유지할 키 화이트리스트. id/name/type/children은 항상 유지된다. */
+  fields?: string[];
+  /** 내부용 현재 레벨(루트 = 0). 호출자가 지정하지 않는다. */
+  _level?: number;
+}
+
+const DEFAULT_DEPTH = 1;
+const DEFAULT_CHILD_LIMIT = 50;
+
+/** fields 화이트리스트와 무관하게 항상 유지하는 키. */
+const ALWAYS_KEEP_FIELDS = new Set(["id", "name", "type", "children"]);
+
+/** depth 한계에 도달한 자식의 축약 표현. */
+function summarizeNode(node: any) {
+  return {
+    id: node.id,
+    name: node.name,
+    type: node.type,
+    // 플러그인 스텁은 children 배열이 없고 childCount 만 들고 온다.
+    childCount: Array.isArray(node.children)
+      ? node.children.length
+      : typeof node.childCount === "number"
+        ? node.childCount
+        : 0,
+    truncated: true as const,
+  };
+}
+
+/**
+ * 필터 결과 안에 절단 마커가 있는지 확인한다.
+ * 조회 도구가 "더 받으려면 depth를 올려라"는 힌트를 붙일지 판단하는 데 쓴다.
+ */
+export function hasTruncation(value: any): boolean {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((item) => hasTruncation(item));
+  if (value.truncated === true) return true;
+  return Object.keys(value).some((key) => hasTruncation(value[key]));
+}
+
 /**
  * Filtra un nodo de Figma para reducir su complejidad y tamaño.
  * Convierte colores a formato hexadecimal y elimina datos innecesarios.
+ *
+ * 무한 재귀는 토큰 폭발의 주 원인이므로 기본적으로 depth 1까지만 전개하고,
+ * 그 아래는 { id, name, type, childCount, truncated } 로 축약한다.
+ *
  * @param node - El nodo de Figma a filtrar
+ * @param opts - depth / childLimit / fields 제한
  * @returns El nodo filtrado o null si debe ser ignorado
  */
-export function filterFigmaNode(node: any) {
+export function filterFigmaNode(node: any, opts: FilterNodeOptions = {}): any {
+  if (!node || typeof node !== "object") {
+    return null;
+  }
+
+  // 플러그인이 이미 잘라 보낸 절단 마커는 가공하지 않고 그대로 통과시킨다.
+  // plugin/code.js 의 getNodeInfo 가 웹소켓 전송 전에 서브트리를 절단하면서
+  // depth 경계 스텁 { id, name, type, childCount, truncated } 과
+  // childLimit 마커 { truncated, omitted } 를 섞어 보낸다.
+  // 아래 키 화이트리스트를 타면 truncated / omitted / childCount 가 전부
+  // 탈락해 "잘렸다"는 사실 자체가 소실되므로 여기서 조기 반환한다.
+  if (node.truncated === true) {
+    return node;
+  }
+
   // Skip VECTOR type nodes
   if (node.type === "VECTOR") {
     return null;
   }
+
+  const depth = opts.depth ?? DEFAULT_DEPTH;
+  const childLimit = opts.childLimit ?? DEFAULT_CHILD_LIMIT;
+  const level = opts._level ?? 0;
 
   const filtered: any = {
     id: node.id,
@@ -106,10 +174,40 @@ export function filterFigmaNode(node: any) {
     };
   }
 
-  if (node.children) {
-    filtered.children = node.children
-      .map((child: any) => filterFigmaNode(child))
-      .filter((child: any) => child !== null); // Remove null children (VECTOR nodes)
+  // depth 0 이면 children 자체를 생략한다.
+  if (Array.isArray(node.children) && node.children.length > 0 && depth > 0) {
+    // Remove VECTOR nodes before counting/limiting
+    const visible = node.children.filter((child: any) => child && child.type !== "VECTOR");
+    const kept = visible.slice(0, childLimit);
+    const omitted = visible.length - kept.length;
+
+    const children: any[] =
+      level >= depth
+        ? kept.map((child: any) => summarizeNode(child))
+        : kept
+            .map((child: any) =>
+              filterFigmaNode(child, {
+                depth,
+                childLimit,
+                fields: opts.fields,
+                _level: level + 1,
+              })
+            )
+            .filter((child: any) => child !== null);
+
+    if (omitted > 0) {
+      children.push({ truncated: true, omitted });
+    }
+
+    filtered.children = children;
+  }
+
+  if (opts.fields && opts.fields.length > 0) {
+    for (const key of Object.keys(filtered)) {
+      if (!ALWAYS_KEEP_FIELDS.has(key) && !opts.fields.includes(key)) {
+        delete filtered[key];
+      }
+    }
   }
 
   return filtered;
