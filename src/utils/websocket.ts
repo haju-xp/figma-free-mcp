@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { logger } from "./logger";
 import { serverUrl, defaultPort, WS_URL, reconnectInterval } from "../config/config";
 import { FigmaCommand, FigmaResponse, CommandProgressUpdate, PendingRequest, ProgressMessage } from "../types";
+import { invalidateAll as invalidateNodeCache } from "./node-cache";
 
 // WebSocket connection and request tracking
 let ws: WebSocket | null = null;
@@ -296,12 +297,51 @@ export async function autoConnect(): Promise<string> {
  * @param timeoutMs - Timeout in milliseconds before failing
  * @returns A promise that resolves with the Figma response
  */
+/**
+ * 노드 상태를 바꾸지 않는 커맨드 목록.
+ *
+ * 캐시 무효화를 쓰기 도구마다 개별로 호출하도록 두면 100개가 넘는 도구 중
+ * 하나만 빠뜨려도 최대 TTL 동안 낡은 노드 정보가 반환된다. 모든 커맨드가
+ * 반드시 통과하는 이 지점에서 한 번에 처리하는 편이 안전하다.
+ * 여기에 없는 커맨드는 전부 쓰기로 간주한다(모르는 것은 쓰기 취급).
+ */
+const READ_ONLY_COMMANDS: ReadonlySet<string> = new Set([
+  "ping",
+  "join",
+  "get_document_info",
+  "get_selection",
+  "get_node_info",
+  "get_nodes_info",
+  "get_styles",
+  "get_local_components",
+  "get_remote_components",
+  "get_team_components",
+  "get_styled_text_segments",
+  "get_pages",
+  "get_image_from_node",
+  "get_svg",
+  "get_grid",
+  "get_guide",
+  "get_annotation",
+  "get_variables",
+  "get_figjam_elements",
+  "export_node_as_image",
+  "scan_text_nodes",
+]);
+
 export function sendCommandToFigma(
   command: FigmaCommand,
   params: unknown = {},
   timeoutMs: number = 60000,
   target?: string
 ): Promise<unknown> {
+  // 쓰기 커맨드는 전송 시점에 노드 캐시를 버린다. batch 는 내부에 어떤
+  // 커맨드가 들어있든 쓰기로 취급된다(허용목록에 없으므로 자동).
+  const isWrite = !READ_ONLY_COMMANDS.has(command);
+  if (isWrite) {
+    invalidateNodeCache();
+  }
+
   return new Promise((resolve, reject) => {
     // If not connected, try to connect first
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -344,9 +384,17 @@ export function sendCommandToFigma(
       }
     }, timeoutMs);
 
-    // Store the promise callbacks to resolve/reject later
+    // Store the promise callbacks to resolve/reject later.
+    // 쓰기 커맨드는 전송 시점과 완료 시점에 각각 캐시를 버린다. 전송 시점만
+    // 버리면, 전송~완료 사이에 끝난 동시 조회가 변경 전 값을 다시 캐시에
+    // 넣어버릴 수 있다(batch 처럼 오래 걸리는 커맨드에서 특히).
     pendingRequests.set(id, {
-      resolve,
+      resolve: isWrite
+        ? (value: unknown) => {
+            invalidateNodeCache();
+            resolve(value);
+          }
+        : resolve,
       reject,
       timeout,
       lastActivity: Date.now(),

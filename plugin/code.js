@@ -129,12 +129,14 @@ async function handleCommand(command, params) {
       if (!params || !params.nodeId) {
         throw new Error("Missing nodeId parameter");
       }
-      return await getNodeInfo(params.nodeId);
+      return await getNodeInfo(params);
     case "get_nodes_info":
       if (!params || !params.nodeIds || !Array.isArray(params.nodeIds)) {
         throw new Error("Missing or invalid nodeIds parameter");
       }
-      return await getNodesInfo(params.nodeIds);
+      return await getNodesInfo(params.nodeIds, params.depth, params.childLimit);
+    case "batch":
+      return await runBatch(params);
     case "create_rectangle":
       return await createRectangle(params);
     case "create_frame":
@@ -354,7 +356,106 @@ async function getSelection() {
   };
 }
 
-async function getNodeInfo(nodeId) {
+// --- Subtree truncation helpers -------------------------------------------
+// exportAsync({format:"JSON_REST_V1"}) returns the FULL descendant tree with
+// every property. For a single screen frame that is hundreds of KB, which is
+// wasteful to push over the websocket. These helpers prune the exported
+// document before it leaves the plugin.
+
+// depth/childLimit 가 오지 않으면 절단하지 않는다.
+//
+// 플러그인은 GitHub main raw URL 로, 서버는 npm 으로 배포되어 갱신 시점이
+// 어긋난다. 여기서 1 을 기본값으로 두면 "신 플러그인 + 구 서버" 조합에서
+// 구 서버가 { nodeId } 만 보내고 얕은 응답을 받으면서도 절단된 사실을
+// 모르는 조용한 회귀가 생긴다. 신 서버는 depth/childLimit 을 항상 명시적으로
+// 보내므로(document-tools.ts), 기본값을 무제한으로 둬도 신 서버 동작은
+// 동일하다.
+const DEFAULT_NODE_INFO_DEPTH = Infinity;
+const DEFAULT_NODE_INFO_CHILD_LIMIT = 0; // 0 = 제한 없음
+
+// Normalize a depth/childLimit option: null/undefined -> fallback.
+function resolveTruncateOption(value, fallback) {
+  if (value === undefined || value === null) return fallback;
+  const num = Number(value);
+  if (isNaN(num)) return fallback;
+  return num;
+}
+
+// Collapse a node into a tiny stub.
+function summarizeTruncatedChild(child) {
+  const childCount =
+    child && Array.isArray(child.children) ? child.children.length : 0;
+  return {
+    id: child ? child.id : undefined,
+    name: child ? child.name : undefined,
+    type: child ? child.type : undefined,
+    childCount: childCount,
+    truncated: true,
+  };
+}
+
+// Recursively prune `node.children`. `currentDepth` is the depth of `node`
+// itself (the root document is depth 0). When a node's depth has reached
+// `depth`, its children are replaced by summary stubs instead of full nodes.
+function truncateNodeChildren(node, currentDepth, depth, childLimit, stats) {
+  if (!node || typeof node !== "object") return;
+  if (!Array.isArray(node.children)) return;
+
+  let children = node.children;
+  let omitted = 0;
+
+  // Per-level child cap
+  if (childLimit > 0 && children.length > childLimit) {
+    omitted = children.length - childLimit;
+    children = children.slice(0, childLimit);
+    stats.truncated = true;
+  }
+
+  if (currentDepth >= depth) {
+    // At the depth boundary: replace children with summaries
+    const summaries = [];
+    for (let i = 0; i < children.length; i++) {
+      summaries.push(summarizeTruncatedChild(children[i]));
+    }
+    if (children.length > 0) stats.truncated = true;
+    if (omitted > 0) summaries.push({ truncated: true, omitted: omitted });
+    node.children = summaries;
+    return;
+  }
+
+  for (let i = 0; i < children.length; i++) {
+    truncateNodeChildren(children[i], currentDepth + 1, depth, childLimit, stats);
+  }
+
+  if (omitted > 0) {
+    children = children.concat([{ truncated: true, omitted: omitted }]);
+  }
+  node.children = children;
+}
+
+// Entry point: prune `doc` in place and flag it when anything was dropped.
+function truncateExportedDocument(doc, depth, childLimit) {
+  if (!doc || typeof doc !== "object") return doc;
+  const stats = { truncated: false };
+  truncateNodeChildren(doc, 0, depth, childLimit, stats);
+  if (stats.truncated) {
+    doc.truncated = true;
+  }
+  return doc;
+}
+
+async function getNodeInfo(params) {
+  // Backwards compatible: accepts either a plain nodeId string or
+  // { nodeId, depth, childLimit }.
+  const opts =
+    params && typeof params === "object" ? params : { nodeId: params };
+  const nodeId = opts.nodeId;
+  const depth = resolveTruncateOption(opts.depth, DEFAULT_NODE_INFO_DEPTH);
+  const childLimit = resolveTruncateOption(
+    opts.childLimit,
+    DEFAULT_NODE_INFO_CHILD_LIMIT
+  );
+
   const node = await getNodeByIdSafe(nodeId);
 
   if (!node) {
@@ -373,10 +474,17 @@ async function getNodeInfo(nodeId) {
     };
   }
 
-  return response.document;
+  // Prune the subtree before it goes over the wire
+  return truncateExportedDocument(response.document, depth, childLimit);
 }
 
-async function getNodesInfo(nodeIds) {
+async function getNodesInfo(nodeIds, depthParam, childLimitParam) {
+  const depth = resolveTruncateOption(depthParam, DEFAULT_NODE_INFO_DEPTH);
+  const childLimit = resolveTruncateOption(
+    childLimitParam,
+    DEFAULT_NODE_INFO_CHILD_LIMIT
+  );
+
   try {
     // Load all nodes in parallel
     const nodes = await Promise.all(
@@ -402,7 +510,7 @@ async function getNodesInfo(nodeIds) {
         }
         return {
           nodeId: node.id,
-          document: doc,
+          document: truncateExportedDocument(doc, depth, childLimit),
         };
       })
     );
@@ -411,6 +519,107 @@ async function getNodesInfo(nodeIds) {
   } catch (error) {
     throw new Error(`Error getting nodes info: ${error.message}`);
   }
+}
+
+// --- Batch command execution ----------------------------------------------
+// Runs many commands over a single websocket round trip. Ops run strictly in
+// order because node creation and parent/child wiring depend on it.
+const BATCH_MAX_OPS = 100;
+const BATCH_PROGRESS_EVERY = 10;
+
+async function runBatch(params) {
+  const opts = params || {};
+  const ops = opts.ops;
+  const stopOnError = opts.stopOnError === undefined ? true : !!opts.stopOnError;
+  const commandId = opts.commandId || generateCommandId();
+
+  if (!Array.isArray(ops) || ops.length === 0) {
+    throw new Error("batch requires a non-empty ops array");
+  }
+
+  if (ops.length > BATCH_MAX_OPS) {
+    throw new Error(
+      `batch supports at most ${BATCH_MAX_OPS} ops; received ${ops.length}`
+    );
+  }
+
+  const total = ops.length;
+  const results = [];
+  let ok = 0;
+  let failed = 0;
+
+  sendProgressUpdate(
+    commandId,
+    'batch',
+    'started',
+    0,
+    total,
+    0,
+    `Starting batch of ${total} ops`,
+    { total: total, stopOnError: stopOnError }
+  );
+
+  for (let i = 0; i < total; i++) {
+    const op = ops[i] || {};
+
+    if (op.command === "batch") {
+      results.push({ i: i, ok: false, error: "nested batch is not allowed" });
+      failed++;
+      if (stopOnError) break;
+      continue;
+    }
+
+    try {
+      const result = await handleCommand(op.command, op.params);
+      const entry = { i: i, ok: true };
+      if (result && result.id) {
+        entry.id = result.id;
+      }
+      results.push(entry);
+      ok++;
+    } catch (err) {
+      results.push({
+        i: i,
+        ok: false,
+        error: err && err.message ? err.message : String(err),
+      });
+      failed++;
+      if (stopOnError) break;
+    }
+
+    // Throttle progress messages: one update per BATCH_PROGRESS_EVERY ops
+    const processed = i + 1;
+    if (processed % BATCH_PROGRESS_EVERY === 0 && processed < total) {
+      sendProgressUpdate(
+        commandId,
+        'batch',
+        'in_progress',
+        Math.round((processed / total) * 100),
+        total,
+        processed,
+        `Processed ${processed}/${total} ops (${ok} ok, ${failed} failed)`,
+        { total: total, ok: ok, failed: failed }
+      );
+    }
+  }
+
+  sendProgressUpdate(
+    commandId,
+    'batch',
+    'completed',
+    100,
+    total,
+    results.length,
+    `Batch complete: ${ok} ok, ${failed} failed`,
+    { total: total, ok: ok, failed: failed }
+  );
+
+  return {
+    total: total,
+    ok: ok,
+    failed: failed,
+    results: results,
+  };
 }
 
 async function createRectangle(params) {
@@ -1666,7 +1875,9 @@ async function cloneNode(params) {
 
 async function scanTextNodes(params) {
   console.log(`Starting to scan text nodes from node ID: ${params.nodeId}`);
-  const { nodeId, useChunking = true, chunkSize = 10, commandId = generateCommandId() } = params || {};
+  // `highlight` defaults to false: highlighting each text node requires a
+  // fill read + write + a visible delay per node, which dominates scan time.
+  const { nodeId, useChunking = true, chunkSize = 50, highlight = false, commandId = generateCommandId() } = params || {};
 
   const node = await getNodeByIdSafe(nodeId);
 
@@ -1702,7 +1913,7 @@ async function scanTextNodes(params) {
         null
       );
 
-      await findTextNodes(node, [], 0, textNodes);
+      await findTextNodes(node, [], 0, textNodes, highlight);
 
       // Send completed progress update
       sendProgressUpdate(
@@ -1817,7 +2028,7 @@ async function scanTextNodes(params) {
     for (const nodeInfo of chunkNodes) {
       if (nodeInfo.node.type === "TEXT") {
         try {
-          const textNodeInfo = await processTextNode(nodeInfo.node, nodeInfo.parentPath, nodeInfo.depth);
+          const textNodeInfo = await processTextNode(nodeInfo.node, nodeInfo.parentPath, nodeInfo.depth, highlight);
           if (textNodeInfo) {
             chunkTextNodes.push(textNodeInfo);
           }
@@ -1827,8 +2038,11 @@ async function scanTextNodes(params) {
         }
       }
 
-      // Brief delay to allow UI updates and prevent freezing
-      await delay(5);
+      // Brief delay to allow UI updates and prevent freezing.
+      // Only needed when highlighting is on (the visual pass needs paint time).
+      if (highlight) {
+        await delay(5);
+      }
     }
 
     // Add results from this chunk
@@ -1911,7 +2125,7 @@ async function collectNodesToProcess(node, parentPath = [], depth = 0, nodesToPr
 }
 
 // Process a single text node
-async function processTextNode(node, parentPath, depth) {
+async function processTextNode(node, parentPath, depth, highlight = false) {
   if (node.type !== "TEXT") return null;
 
   try {
@@ -1943,28 +2157,32 @@ async function processTextNode(node, parentPath, depth) {
       depth: depth,
     };
 
-    // Highlight the node briefly (optional visual feedback)
-    try {
-      const originalFills = JSON.parse(JSON.stringify(node.fills));
-      node.fills = [
-        {
-          type: "SOLID",
-          color: { r: 1, g: 0.5, b: 0 },
-          opacity: 0.3,
-        },
-      ];
-
-      // Brief delay for the highlight to be visible
-      await delay(100);
-
+    // Highlight the node briefly (optional visual feedback).
+    // Skipped entirely unless requested: reading/writing fills plus the visible
+    // delay is the single biggest cost of a scan.
+    if (highlight) {
       try {
-        node.fills = originalFills;
-      } catch (err) {
-        console.error("Error resetting fills:", err);
+        const originalFills = JSON.parse(JSON.stringify(node.fills));
+        node.fills = [
+          {
+            type: "SOLID",
+            color: { r: 1, g: 0.5, b: 0 },
+            opacity: 0.3,
+          },
+        ];
+
+        // Brief delay for the highlight to be visible
+        await delay(100);
+
+        try {
+          node.fills = originalFills;
+        } catch (err) {
+          console.error("Error resetting fills:", err);
+        }
+      } catch (highlightErr) {
+        console.error("Error highlighting text node:", highlightErr);
+        // Continue anyway, highlighting is just visual feedback
       }
-    } catch (highlightErr) {
-      console.error("Error highlighting text node:", highlightErr);
-      // Continue anyway, highlighting is just visual feedback
     }
 
     return safeTextNode;
@@ -1980,7 +2198,7 @@ function delay(ms) {
 }
 
 // Keep the original findTextNodes for backward compatibility
-async function findTextNodes(node, parentPath = [], depth = 0, textNodes = []) {
+async function findTextNodes(node, parentPath = [], depth = 0, textNodes = [], highlight = false) {
   // Skip invisible nodes
   if (node.visible === false) return;
 
@@ -2017,29 +2235,32 @@ async function findTextNodes(node, parentPath = [], depth = 0, textNodes = []) {
         depth: depth,
       };
 
-      // Only highlight the node if it's not being done via API
-      try {
-        // Safe way to create a temporary highlight without causing serialization issues
-        const originalFills = JSON.parse(JSON.stringify(node.fills));
-        node.fills = [
-          {
-            type: "SOLID",
-            color: { r: 1, g: 0.5, b: 0 },
-            opacity: 0.3,
-          },
-        ];
-
-        // Promise-based delay instead of setTimeout
-        await delay(500);
-
+      // Only highlight the node when explicitly requested. Skipped by default:
+      // the fill round trip plus the 500ms delay per node is the bottleneck.
+      if (highlight) {
         try {
-          node.fills = originalFills;
-        } catch (err) {
-          console.error("Error resetting fills:", err);
+          // Safe way to create a temporary highlight without causing serialization issues
+          const originalFills = JSON.parse(JSON.stringify(node.fills));
+          node.fills = [
+            {
+              type: "SOLID",
+              color: { r: 1, g: 0.5, b: 0 },
+              opacity: 0.3,
+            },
+          ];
+
+          // Promise-based delay instead of setTimeout
+          await delay(500);
+
+          try {
+            node.fills = originalFills;
+          } catch (err) {
+            console.error("Error resetting fills:", err);
+          }
+        } catch (highlightErr) {
+          console.error("Error highlighting text node:", highlightErr);
+          // Continue anyway, highlighting is just visual feedback
         }
-      } catch (highlightErr) {
-        console.error("Error highlighting text node:", highlightErr);
-        // Continue anyway, highlighting is just visual feedback
       }
 
       textNodes.push(safeTextNode);
@@ -2052,14 +2273,16 @@ async function findTextNodes(node, parentPath = [], depth = 0, textNodes = []) {
   // Recursively process children of container nodes
   if ("children" in node) {
     for (const child of node.children) {
-      await findTextNodes(child, nodePath, depth + 1, textNodes);
+      await findTextNodes(child, nodePath, depth + 1, textNodes, highlight);
     }
   }
 }
 
 // Replace text in a specific node
 async function setMultipleTextContents(params) {
-  const { nodeId, text } = params || {};
+  // `highlight` defaults to false: the per-node highlight restore costs a
+  // 500ms delay each, which dominates the total run time.
+  const { nodeId, text, highlight = false } = params || {};
   const commandId = params.commandId || generateCommandId();
 
   if (!nodeId || !text || !Array.isArray(text)) {
@@ -2101,8 +2324,8 @@ async function setMultipleTextContents(params) {
   let successCount = 0;
   let failureCount = 0;
 
-  // Split text replacements into chunks of 5
-  const CHUNK_SIZE = 5;
+  // Split text replacements into chunks
+  const CHUNK_SIZE = 25;
   const chunks = [];
 
   for (let i = 0; i < text.length; i += CHUNK_SIZE) {
@@ -2189,22 +2412,24 @@ async function setMultipleTextContents(params) {
         console.log(`Original text: "${originalText}"`);
         console.log(`Will translate to: "${replacement.text}"`);
 
-        // Highlight the node before changing text
+        // Highlight the node before changing text (opt-in only)
         let originalFills;
-        try {
-          // Save original fills for restoration later
-          originalFills = JSON.parse(JSON.stringify(textNode.fills));
-          // Apply highlight color (orange with 30% opacity)
-          textNode.fills = [
-            {
-              type: "SOLID",
-              color: { r: 1, g: 0.5, b: 0 },
-              opacity: 0.3,
-            },
-          ];
-        } catch (highlightErr) {
-          console.error(`Error highlighting text node: ${highlightErr.message}`);
-          // Continue anyway, highlighting is just visual feedback
+        if (highlight) {
+          try {
+            // Save original fills for restoration later
+            originalFills = JSON.parse(JSON.stringify(textNode.fills));
+            // Apply highlight color (orange with 30% opacity)
+            textNode.fills = [
+              {
+                type: "SOLID",
+                color: { r: 1, g: 0.5, b: 0 },
+                opacity: 0.3,
+              },
+            ];
+          } catch (highlightErr) {
+            console.error(`Error highlighting text node: ${highlightErr.message}`);
+            // Continue anyway, highlighting is just visual feedback
+          }
         }
 
         // Use the existing setTextContent function to handle font loading and text setting
@@ -2214,7 +2439,7 @@ async function setMultipleTextContents(params) {
         });
 
         // Keep highlight for a moment after text change, then restore original fills
-        if (originalFills) {
+        if (highlight && originalFills) {
           try {
             // Use delay function for consistent timing
             await delay(500);
@@ -2272,10 +2497,12 @@ async function setMultipleTextContents(params) {
       }
     );
 
-    // Add a small delay between chunks to avoid overloading Figma
-    if (chunkIndex < chunks.length - 1) {
+    // Add a small delay between chunks to avoid overloading Figma.
+    // Only needed for the visual highlight pass; 0 when highlighting is off.
+    const interChunkDelay = highlight ? 300 : 0;
+    if (chunkIndex < chunks.length - 1 && interChunkDelay > 0) {
       console.log('Pausing between chunks to avoid overloading Figma...');
-      await delay(1000); // 1 second delay between chunks
+      await delay(interChunkDelay);
     }
   }
 

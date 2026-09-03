@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { sendCommandToFigma } from "../../utils/websocket";
+import { compact, fail, nodeId, text } from "../../schemas/common";
 
 /**
  * Register component-related tools to the MCP server
@@ -11,11 +12,11 @@ export function registerComponentTools(server: McpServer): void {
   // Create Component Instance Tool
   server.tool(
     "create_component_instance",
-    "Create an instance of a component in Figma",
+    "Create an instance of a component in Figma. x/y are local coordinates relative to parent.",
     {
-      componentKey: z.string().describe("Key of the component to instantiate"),
-      x: z.number().describe("X position (local coordinates, relative to parent)"),
-      y: z.number().describe("Y position (local coordinates, relative to parent)"),
+      componentKey: z.string().describe("Component key (not the node ID)"),
+      x: z.number(),
+      y: z.number(),
     },
     async ({ componentKey, x, y }) => {
       try {
@@ -24,24 +25,10 @@ export function registerComponentTools(server: McpServer): void {
           x,
           y,
         });
-        const typedResult = result as any;
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(typedResult),
-            }
-          ]
-        }
+        const { id } = result as { id: string };
+        return text(`instance ${id}`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error creating component instance: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("create_component_instance failed", error);
       }
     }
   );
@@ -49,10 +36,10 @@ export function registerComponentTools(server: McpServer): void {
   // Create Component from Node Tool
   server.tool(
     "create_component_from_node",
-    "Convert an existing node (frame, group, etc.) into a reusable component in Figma",
+    "Convert an existing node (frame, group, etc.) into a reusable component in Figma. Returns the component key needed by create_component_instance.",
     {
-      nodeId: z.string().describe("The ID of the node to convert into a component"),
-      name: z.string().optional().describe("Optional new name for the component"),
+      nodeId,
+      name: z.string().optional().describe("New component name"),
     },
     async ({ nodeId, name }) => {
       try {
@@ -60,24 +47,10 @@ export function registerComponentTools(server: McpServer): void {
           nodeId,
           name,
         });
-        const typedResult = result as { id: string; name: string; key: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Created component "${typedResult.name}" with ID: ${typedResult.id} and key: ${typedResult.key}. You can now create instances of this component using the key.`,
-            }
-          ]
-        }
+        const typedResult = result as { id: string; key: string };
+        return text(`component ${typedResult.id} key=${typedResult.key}`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error creating component from node: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("create_component_from_node failed", error);
       }
     }
   );
@@ -87,8 +60,8 @@ export function registerComponentTools(server: McpServer): void {
     "create_component_set",
     "Create a component set (variants) from multiple component nodes in Figma",
     {
-      componentIds: z.array(z.string()).describe("Array of component node IDs to combine into a component set"),
-      name: z.string().optional().describe("Optional name for the component set"),
+      componentIds: z.array(z.string()).describe("Component node IDs to combine"),
+      name: z.string().optional(),
     },
     async ({ componentIds, name }) => {
       try {
@@ -96,24 +69,10 @@ export function registerComponentTools(server: McpServer): void {
           componentIds,
           name,
         });
-        const typedResult = result as { id: string; name: string; key: string; variantCount: number };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Created component set "${typedResult.name}" with ID: ${typedResult.id}, key: ${typedResult.key}, containing ${typedResult.variantCount} variants.`,
-            }
-          ]
-        }
+        const typedResult = result as { id: string; key: string; variantCount: number };
+        return text(`componentSet ${typedResult.id} key=${typedResult.key} variants=${typedResult.variantCount}`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error creating component set: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("create_component_set failed", error);
       }
     }
   );
@@ -123,8 +82,10 @@ export function registerComponentTools(server: McpServer): void {
     "set_instance_variant",
     "Change the variant properties of a component instance without recreating it. This preserves instance overrides and is more efficient than delete + create workflow.",
     {
-      nodeId: z.string().describe("The ID of the instance node to modify"),
-      properties: z.record(z.string()).describe("Variant properties to set as key-value pairs (e.g., { \"State\": \"Hover\", \"Size\": \"Large\" })"),
+      nodeId: z.string().describe("Instance node ID"),
+      properties: z
+        .record(z.string())
+        .describe('Variant properties, e.g. { "State": "Hover", "Size": "Large" }'),
     },
     async ({ nodeId, properties }) => {
       try {
@@ -132,24 +93,10 @@ export function registerComponentTools(server: McpServer): void {
           nodeId,
           properties,
         });
-        const typedResult = result as { id: string; name: string; properties: Record<string, string> };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Successfully changed variant properties of instance "${typedResult.name}" (ID: ${typedResult.id}). New properties: ${JSON.stringify(typedResult.properties)}`,
-            }
-          ]
-        }
+        const typedResult = result as { properties: Record<string, string> };
+        return text(`variant ${nodeId} ${compact(typedResult.properties)}`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error setting instance variant: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("set_instance_variant failed", error);
       }
     }
   );

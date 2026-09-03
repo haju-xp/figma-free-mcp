@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { sendCommandToFigma } from "../../utils/websocket";
+import { text, fail, nodeId } from "../../schemas/common";
+import * as nodeCache from "../../utils/node-cache";
+
+/** get_svg 기본 상한. 읽기 응답이 무제한으로 커지는 것을 막는다. */
+const DEFAULT_SVG_MAX_CHARS = 20000;
 
 /**
  * Register SVG-related tools to the MCP server
@@ -27,24 +32,13 @@ export function registerSvgTools(server: McpServer): void {
           name,
           parentId,
         });
+        nodeCache.invalidateAll();
         const typedResult = result as { id: string; name: string; width: number; height: number };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Imported SVG as "${typedResult.name}" with ID: ${typedResult.id} (${typedResult.width}x${typedResult.height})`,
-            },
-          ],
-        };
+        return text(
+          `Imported SVG as "${typedResult.name}" with ID: ${typedResult.id} (${typedResult.width}x${typedResult.height})`
+        );
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error importing SVG: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error importing SVG", error);
       }
     }
   );
@@ -52,31 +46,38 @@ export function registerSvgTools(server: McpServer): void {
   // Export SVG Tool
   server.tool(
     "get_svg",
-    "Export a single node as an SVG string from Figma. Returns the SVG markup including all nested children.",
+    "Export a single node as an SVG string from Figma, including nested children. Output is capped at maxChars (default 20000).",
     {
-      nodeId: z.string().describe("The ID of the node to export as SVG"),
+      nodeId,
+      maxChars: z
+        .number()
+        .int()
+        .min(500)
+        .max(500_000)
+        .optional()
+        .describe("Max SVG characters returned (default 20000)"),
     },
-    async ({ nodeId }) => {
+    async ({ nodeId, maxChars }) => {
+      const limit = maxChars ?? DEFAULT_SVG_MAX_CHARS;
+      const key = nodeCache.cacheKey("get_svg", { nodeId, maxChars: limit });
+
+      const cached = nodeCache.get(key);
+      if (cached !== undefined) return text(cached);
+
       try {
         const result = await sendCommandToFigma("get_svg", { nodeId }, 120000);
         const typedResult = result as { svgString: string; name: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: typedResult.svgString,
-            },
-          ],
-        };
+        const svg = typedResult.svgString ?? "";
+
+        const body =
+          svg.length > limit
+            ? `${svg.slice(0, limit)}\n<!-- truncated: ${svg.length - limit} of ${svg.length} chars omitted -->`
+            : svg;
+
+        nodeCache.set(key, body);
+        return text(body);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error exporting SVG: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error exporting SVG", error);
       }
     }
   );

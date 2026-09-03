@@ -1,7 +1,17 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { sendCommandToFigma, joinChannel } from "../../utils/websocket";
-import { filterFigmaNode } from "../../utils/figma-helpers";
+import { filterFigmaNode, hasTruncation } from "../../utils/figma-helpers";
+import { compact, text, fail, nodeId, depth, childLimit } from "../../schemas/common";
+import * as nodeCache from "../../utils/node-cache";
+
+/** 조회 응답에서 유지할 키 화이트리스트 파라미터. */
+const fields = z.array(z.string()).optional().describe("Keep only these keys (id/name/type always kept)");
+
+/** 절단이 발생했을 때 붙이는 짧은 힌트. */
+function truncationHint(currentDepth: number): string {
+  return `\n+ truncated at depth ${currentDepth}; call again with depth:${currentDepth + 1} for more`;
+}
 
 /**
  * Register document-related tools to the MCP server
@@ -16,23 +26,9 @@ export function registerDocumentTools(server: McpServer): void {
     async () => {
       try {
         const result = await sendCommandToFigma("get_document_info");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result)
-            }
-          ]
-        };
+        return text(compact(result));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting document info: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error getting document info", error);
       }
     }
   );
@@ -45,23 +41,9 @@ export function registerDocumentTools(server: McpServer): void {
     async () => {
       try {
         const result = await sendCommandToFigma("get_selection");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result)
-            }
-          ]
-        };
+        return text(compact(result));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting selection: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error getting selection", error);
       }
     }
   );
@@ -69,37 +51,55 @@ export function registerDocumentTools(server: McpServer): void {
   // Node Info Tool
   server.tool(
     "get_node_info",
-    "Get detailed information about a specific node in Figma",
+    "Get info about a node. Defaults to depth 1 (node + direct children) and 50 children per level; raise depth for deeper subtrees.",
     {
-      nodeId: z.string().describe("The ID of the node to get information about"),
+      nodeId,
+      depth,
+      childLimit,
+      fields,
     },
-    async ({ nodeId }) => {
+    async ({ nodeId, depth: reqDepth, childLimit: reqChildLimit, fields: reqFields }) => {
+      const effectiveDepth = reqDepth ?? 1;
+      const effectiveChildLimit = reqChildLimit ?? 50;
+      const key = nodeCache.cacheKey("get_node_info", {
+        nodeId,
+        depth: effectiveDepth,
+        childLimit: effectiveChildLimit,
+        fields: reqFields,
+      });
+
+      const cached = nodeCache.get(key);
+      if (cached !== undefined) return text(cached);
+
       try {
-        const result = await sendCommandToFigma("get_node_info", { nodeId });
-        const filtered = filterFigmaNode(result);
-        const coordinateNote = filtered.absoluteBoundingBox && filtered.localPosition
-          ? "absoluteBoundingBox contains global coordinates (relative to canvas). localPosition contains local coordinates (relative to parent, use these for move_node)."
-          : undefined;
+        // 플러그인에도 제한을 넘긴다. 구 버전 플러그인은 무시하고 전체를 보내므로
+        // 서버에서 filterFigmaNode로 반드시 다시 자른다(이중 방어).
+        const result = await sendCommandToFigma("get_node_info", {
+          nodeId,
+          depth: effectiveDepth,
+          childLimit: effectiveChildLimit,
+        });
 
-        const payload = coordinateNote ? { ...filtered, _note: coordinateNote } : filtered;
+        const filtered = filterFigmaNode(result, {
+          depth: effectiveDepth,
+          childLimit: effectiveChildLimit,
+          fields: reqFields,
+        });
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(payload)
-            }
-          ]
-        };
+        if (!filtered) return text(compact({ id: nodeId, skipped: "VECTOR" }));
+
+        const payload =
+          filtered.absoluteBoundingBox && filtered.localPosition
+            ? { ...filtered, _note: "absoluteBoundingBox=global, localPosition=local(use for move_node)" }
+            : filtered;
+
+        let body = compact(payload);
+        if (hasTruncation(filtered)) body += truncationHint(effectiveDepth);
+
+        nodeCache.set(key, body);
+        return text(body);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting node info: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error getting node info", error);
       }
     }
   );
@@ -107,30 +107,48 @@ export function registerDocumentTools(server: McpServer): void {
   // Nodes Info Tool
   server.tool(
     "get_nodes_info",
-    "Get detailed information about multiple nodes in Figma",
+    "Get info about multiple nodes. Defaults to depth 1 and 50 children per level; raise depth for deeper subtrees.",
     {
-      nodeIds: z.array(z.string()).describe("Array of node IDs to get information about")
+      nodeIds: z.array(z.string()).describe("Node IDs to inspect"),
+      depth,
+      childLimit,
+      fields,
     },
-    async ({ nodeIds }) => {
+    async ({ nodeIds, depth: reqDepth, childLimit: reqChildLimit, fields: reqFields }) => {
+      const effectiveDepth = reqDepth ?? 1;
+      const effectiveChildLimit = reqChildLimit ?? 50;
+      const key = nodeCache.cacheKey("get_nodes_info", {
+        nodeIds,
+        depth: effectiveDepth,
+        childLimit: effectiveChildLimit,
+        fields: reqFields,
+      });
+
+      const cached = nodeCache.get(key);
+      if (cached !== undefined) return text(cached);
+
       try {
-        const results = await sendCommandToFigma('get_nodes_info', { nodeIds }) as any[];
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(results.map((result) => filterFigmaNode(result.document || result.info)))
-            }
-          ]
-        };
+        const results = (await sendCommandToFigma("get_nodes_info", {
+          nodeIds,
+          depth: effectiveDepth,
+          childLimit: effectiveChildLimit,
+        })) as any[];
+
+        const filtered = results.map((result) =>
+          filterFigmaNode(result.document || result.info, {
+            depth: effectiveDepth,
+            childLimit: effectiveChildLimit,
+            fields: reqFields,
+          })
+        );
+
+        let body = compact(filtered);
+        if (hasTruncation(filtered)) body += truncationHint(effectiveDepth);
+
+        nodeCache.set(key, body);
+        return text(body);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting nodes info: ${error instanceof Error ? error.message : String(error)}`
-            }
-          ]
-        };
+        return fail("Error getting nodes info", error);
       }
     }
   );
@@ -143,23 +161,9 @@ export function registerDocumentTools(server: McpServer): void {
     async () => {
       try {
         const result = await sendCommandToFigma("get_styles");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result)
-            }
-          ]
-        };
+        return text(compact(result));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting styles: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error getting styles", error);
       }
     }
   );
@@ -172,23 +176,9 @@ export function registerDocumentTools(server: McpServer): void {
     async () => {
       try {
         const result = await sendCommandToFigma("get_local_components");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result)
-            }
-          ]
-        };
+        return text(compact(result));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting local components: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error getting local components", error);
       }
     }
   );
@@ -201,23 +191,9 @@ export function registerDocumentTools(server: McpServer): void {
     async () => {
       try {
         const result = await sendCommandToFigma("get_remote_components");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2)
-            }
-          ]
-        };
+        return text(compact(result));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting remote components: ${error instanceof Error ? error.message : String(error)}`
-            }
-          ]
-        };
+        return fail("Error getting remote components", error);
       }
     }
   );
@@ -227,16 +203,10 @@ export function registerDocumentTools(server: McpServer): void {
     "scan_text_nodes",
     "Scan all text nodes in the selected Figma node",
     {
-      nodeId: z.string().describe("ID of the node to scan"),
+      nodeId,
     },
     async ({ nodeId }) => {
       try {
-        // Initial response to indicate we're starting the process
-        const initialStatus = {
-          type: "text" as const,
-          text: "Starting text node scanning. This may take a moment for large designs...",
-        };
-
         // Use the plugin's scan_text_nodes function with chunking flag
         const result = await sendCommandToFigma("scan_text_nodes", {
           nodeId,
@@ -254,46 +224,15 @@ export function registerDocumentTools(server: McpServer): void {
             textNodes: Array<any>
           };
 
-          const summaryText = `
-          Scan completed:
-          - Found ${typedResult.totalNodes} text nodes
-          - Processed in ${typedResult.chunks} chunks
-          `;
-
-          return {
-            content: [
-              initialStatus,
-              {
-                type: "text" as const,
-                text: summaryText
-              },
-              {
-                type: "text" as const,
-                text: JSON.stringify(typedResult.textNodes, null, 2)
-              }
-            ],
-          };
+          return text(
+            `${typedResult.totalNodes} text nodes in ${typedResult.chunks} chunks\n${compact(typedResult.textNodes)}`
+          );
         }
 
         // If chunking wasn't used or wasn't reported in the result format, return the result as is
-        return {
-          content: [
-            initialStatus,
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return text(compact(result));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error scanning text nodes: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error scanning text nodes", error);
       }
     }
   );
@@ -310,12 +249,7 @@ export function registerDocumentTools(server: McpServer): void {
         if (!channel) {
           // If no channel provided, ask the user for input
           return {
-            content: [
-              {
-                type: "text",
-                text: "Please provide a channel name to join:",
-              },
-            ],
+            ...text("Please provide a channel name to join:"),
             followUp: {
               tool: "join_channel",
               description: "Join the specified channel",
@@ -326,23 +260,9 @@ export function registerDocumentTools(server: McpServer): void {
         // Use joinChannel instead of sendCommandToFigma to ensure currentChannel is updated
         await joinChannel(channel);
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Successfully joined channel: ${channel}`,
-            },
-          ],
-        };
+        return text(`Successfully joined channel: ${channel}`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error joining channel: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error joining channel", error);
       }
     }
   );
@@ -350,14 +270,14 @@ export function registerDocumentTools(server: McpServer): void {
   // Export Node as Image Tool
   server.tool(
     "export_node_as_image",
-    "Export a node as an image from Figma",
+    "Export a node as an image from Figma. Inline images are token-expensive: scale is capped at 2 (default 1).",
     {
-      nodeId: z.string().describe("The ID of the node to export"),
+      nodeId,
       format: z
         .enum(["PNG", "JPG", "SVG", "PDF"])
         .optional()
         .describe("Export format"),
-      scale: z.number().positive().optional().describe("Export scale"),
+      scale: z.number().positive().max(2).optional().describe("Export scale (default 1, max 2)"),
     },
     async ({ nodeId, format, scale }) => {
       try {
@@ -371,21 +291,14 @@ export function registerDocumentTools(server: McpServer): void {
         return {
           content: [
             {
-              type: "image",
+              type: "image" as const,
               data: typedResult.imageData,
               mimeType: typedResult.mimeType || "image/png",
             },
           ],
         };
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error exporting node as image: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error exporting node as image", error);
       }
     }
   );
@@ -400,24 +313,11 @@ export function registerDocumentTools(server: McpServer): void {
     async ({ name }) => {
       try {
         const result = await sendCommandToFigma("create_page", { name });
+        nodeCache.invalidateAll();
         const typedResult = result as { id: string; name: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Created page "${typedResult.name}" with ID: ${typedResult.id}`,
-            },
-          ],
-        };
+        return text(`Created page "${typedResult.name}" with ID: ${typedResult.id}`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error creating page: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error creating page", error);
       }
     }
   );
@@ -432,24 +332,11 @@ export function registerDocumentTools(server: McpServer): void {
     async ({ pageId }) => {
       try {
         const result = await sendCommandToFigma("delete_page", { pageId });
+        nodeCache.invalidateAll();
         const typedResult = result as { success: boolean; name: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Deleted page "${typedResult.name}" successfully`,
-            },
-          ],
-        };
+        return text(`Deleted page "${typedResult.name}" successfully`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error deleting page: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error deleting page", error);
       }
     }
   );
@@ -465,24 +352,11 @@ export function registerDocumentTools(server: McpServer): void {
     async ({ pageId, name }) => {
       try {
         const result = await sendCommandToFigma("rename_page", { pageId, name });
+        nodeCache.invalidateAll();
         const typedResult = result as { id: string; name: string; oldName: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Renamed page from "${typedResult.oldName}" to "${typedResult.name}"`,
-            },
-          ],
-        };
+        return text(`Renamed page from "${typedResult.oldName}" to "${typedResult.name}"`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error renaming page: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error renaming page", error);
       }
     }
   );
@@ -495,23 +369,9 @@ export function registerDocumentTools(server: McpServer): void {
     async () => {
       try {
         const result = await sendCommandToFigma("get_pages");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result),
-            },
-          ],
-        };
+        return text(compact(result));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting pages: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error getting pages", error);
       }
     }
   );
@@ -526,24 +386,11 @@ export function registerDocumentTools(server: McpServer): void {
     async ({ pageId }) => {
       try {
         const result = await sendCommandToFigma("set_current_page", { pageId });
+        nodeCache.invalidateAll();
         const typedResult = result as { id: string; name: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Switched to page "${typedResult.name}"`,
-            },
-          ],
-        };
+        return text(`Switched to page "${typedResult.name}"`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error switching page: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error switching page", error);
       }
     }
   );
@@ -559,24 +406,11 @@ export function registerDocumentTools(server: McpServer): void {
     async ({ pageId, name }) => {
       try {
         const result = await sendCommandToFigma("duplicate_page", { pageId, name });
+        nodeCache.invalidateAll();
         const typedResult = result as { id: string; name: string; originalName: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Duplicated page "${typedResult.originalName}" → "${typedResult.name}" with ID: ${typedResult.id}`,
-            },
-          ],
-        };
+        return text(`Duplicated page "${typedResult.originalName}" → "${typedResult.name}" with ID: ${typedResult.id}`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error duplicating page: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("Error duplicating page", error);
       }
     }
   );

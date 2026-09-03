@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { sendCommandToFigma } from "../../utils/websocket";
+import { compact, fail, nodeId, text, toFigmaColor } from "../../schemas/common";
 
 /**
  * Register variable tools to the MCP server
@@ -16,24 +17,9 @@ export function registerVariableTools(server: McpServer): void {
     async () => {
       try {
         const result = await sendCommandToFigma("get_variables", {});
-        const typedResult = result as { collections: any[] };
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(typedResult, null, 2),
-            },
-          ],
-        };
+        return text(compact(result));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting variables: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("get_variables failed", error);
       }
     }
   );
@@ -43,41 +29,34 @@ export function registerVariableTools(server: McpServer): void {
     "set_variable",
     "Create or update a variable in a Figma variable collection. Creates the collection if collectionName is provided and it doesn't exist.",
     {
-      collectionId: z.string().optional().describe("ID of an existing variable collection"),
-      collectionName: z.string().optional().describe("Name for a new collection (used if collectionId not provided)"),
+      collectionId: z.string().optional().describe("Existing collection ID"),
+      collectionName: z.string().optional().describe("Name for a new collection (used if collectionId is omitted)"),
       name: z.string().describe("Variable name"),
-      resolvedType: z.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"]).describe("Variable type"),
-      value: z.any().describe("Variable value. COLOR: {r,g,b,a} (0-1). FLOAT: number. STRING: string. BOOLEAN: boolean."),
-      modeId: z.string().optional().describe("Mode ID to set the value for (uses default mode if omitted)"),
+      resolvedType: z.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"]),
+      value: z
+        .any()
+        .describe("COLOR: hex string like #ee6112. FLOAT: number. STRING: string. BOOLEAN: boolean."),
+      modeId: z.string().optional().describe("Mode ID (default: the collection's default mode)"),
     },
     async ({ collectionId, collectionName, name, resolvedType, value, modeId }) => {
       try {
+        // COLOR 변수는 hex 문자열을 받아 플러그인이 기대하는 {r,g,b,a}로 변환한다.
+        // 이미 객체로 넘어온 경우는 그대로 통과시킨다(하위 호환).
+        const resolvedValue =
+          resolvedType === "COLOR" && typeof value === "string" ? toFigmaColor(value) : value;
+
         const result = await sendCommandToFigma("set_variable", {
           collectionId,
           collectionName,
           name,
           resolvedType,
-          value,
+          value: resolvedValue,
           modeId,
         });
-        const typedResult = result as { variableId: string; variableName: string; collectionName: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Set variable "${typedResult.variableName}" in collection "${typedResult.collectionName}" (ID: ${typedResult.variableId})`,
-            },
-          ],
-        };
+        const typedResult = result as { variableId: string; collectionName: string };
+        return text(`variable ${typedResult.variableId} "${name}" in "${typedResult.collectionName}"`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error setting variable: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("set_variable failed", error);
       }
     }
   );
@@ -87,9 +66,9 @@ export function registerVariableTools(server: McpServer): void {
     "apply_variable_to_node",
     "Bind a variable to a node property in Figma. Call once per field — for multiple fields, call multiple times.",
     {
-      nodeId: z.string().describe("The ID of the node to bind the variable to"),
-      variableId: z.string().describe("The ID of the variable to bind"),
-      field: z.string().describe("The node property field to bind (e.g., 'fills/0/color', 'opacity', 'width', 'height')"),
+      nodeId,
+      variableId: z.string().describe("Variable ID"),
+      field: z.string().describe("Property path, e.g. 'fills/0/color', 'opacity', 'width', 'height'"),
     },
     async ({ nodeId, variableId, field }) => {
       try {
@@ -98,24 +77,10 @@ export function registerVariableTools(server: McpServer): void {
           variableId,
           field,
         });
-        const typedResult = result as { nodeName: string; variableName: string; field: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Bound variable "${typedResult.variableName}" to field "${typedResult.field}" on node "${typedResult.nodeName}"`,
-            },
-          ],
-        };
+        const typedResult = result as { variableName: string; field: string };
+        return text(`bound "${typedResult.variableName}" to ${typedResult.field} on ${nodeId}`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error applying variable to node: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("apply_variable_to_node failed", error);
       }
     }
   );
@@ -125,9 +90,9 @@ export function registerVariableTools(server: McpServer): void {
     "switch_variable_mode",
     "Switch the variable mode on a node for a specific collection. This changes which mode's values are used for bound variables.",
     {
-      nodeId: z.string().describe("The ID of the node to switch mode on"),
-      collectionId: z.string().describe("The ID of the variable collection"),
-      modeId: z.string().describe("The ID of the mode to switch to"),
+      nodeId,
+      collectionId: z.string().describe("Variable collection ID"),
+      modeId: z.string().describe("Mode ID to switch to"),
     },
     async ({ nodeId, collectionId, modeId }) => {
       try {
@@ -136,24 +101,10 @@ export function registerVariableTools(server: McpServer): void {
           collectionId,
           modeId,
         });
-        const typedResult = result as { nodeName: string; collectionName: string; modeName: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Switched to mode "${typedResult.modeName}" for collection "${typedResult.collectionName}" on node "${typedResult.nodeName}"`,
-            },
-          ],
-        };
+        const typedResult = result as { collectionName: string; modeName: string };
+        return text(`mode "${typedResult.modeName}" (${typedResult.collectionName}) -> ${nodeId}`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error switching variable mode: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("switch_variable_mode failed", error);
       }
     }
   );

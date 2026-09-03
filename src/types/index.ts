@@ -44,6 +44,7 @@ export type FigmaCommand =
   | "get_document_info"
   | "get_selection"
   | "get_node_info"
+  | "get_nodes_info"
   | "create_rectangle"
   | "create_frame"
   | "create_text"
@@ -78,6 +79,7 @@ export type FigmaCommand =
   | "set_paragraph_spacing"
   | "set_text_case"
   | "set_text_decoration"
+  | "set_text_align"
   | "get_styled_text_segments"
   | "load_font_async"
   | "get_remote_components"
@@ -129,4 +131,5 @@ export type FigmaCommand =
   | "set_sticky_text"
   | "create_shape_with_text"
   | "create_connector"
-  | "create_section";
+  | "create_section"
+  | "batch";

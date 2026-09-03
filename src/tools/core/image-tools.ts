@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { sendCommandToFigma } from "../../utils/websocket";
+import { compact, fail, nodeId, text } from "../../schemas/common";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -14,12 +15,12 @@ export function registerImageTools(server: McpServer): void {
   // Set Image Fill Tool
   server.tool(
     "set_image_fill",
-    "Apply image to node from URL or base64 data",
+    "Apply an image to a node from a URL or base64 data",
     {
-      nodeId: z.string().describe("The ID of the node to apply image to"),
+      nodeId,
       imageSource: z.string().describe("Image URL or base64 data string"),
-      sourceType: z.enum(["url", "base64"]).describe("Source type: 'url' for image URL, 'base64' for base64 encoded data"),
-      scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("Image scaling mode (default: FILL)"),
+      sourceType: z.enum(["url", "base64"]).describe("'url' for an image URL, 'base64' for encoded data"),
+      scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("(default: FILL)"),
     },
     async ({ nodeId, imageSource, sourceType, scaleMode }) => {
       try {
@@ -30,17 +31,10 @@ export function registerImageTools(server: McpServer): void {
           scaleMode: scaleMode || "FILL",
         }, 60000); // 60 second timeout for image upload
 
-        const typedResult = result as { name: string; scaleMode: string };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Set image fill on node "${typedResult.name}" with scaleMode: ${typedResult.scaleMode}`,
-            },
-          ],
-        };
+        const typedResult = result as { scaleMode: string };
+        return text(`image ${typedResult.scaleMode} -> ${nodeId}`);
       } catch (error) {
-        throw new Error(`Error setting image fill: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`set_image_fill failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   );
@@ -48,9 +42,9 @@ export function registerImageTools(server: McpServer): void {
   // Get Image from Node Tool
   server.tool(
     "get_image_from_node",
-    "Extract image metadata from a node",
+    "Extract image fill metadata (hash, size, scale mode, rotation, filters) from a node",
     {
-      nodeId: z.string().describe("The ID of the node to get image from"),
+      nodeId,
     },
     async ({ nodeId }) => {
       try {
@@ -66,33 +60,18 @@ export function registerImageTools(server: McpServer): void {
         };
 
         if (!typedResult.hasImage) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Node "${typedResult.name}" does not have an image fill`,
-              },
-            ],
-          };
+          return text(`no image fill on ${nodeId}`);
         }
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Image on node "${typedResult.name}":\n- Hash: ${typedResult.imageHash}\n- Scale Mode: ${typedResult.scaleMode}\n- Image Size: ${typedResult.imageSize?.width}x${typedResult.imageSize?.height}\n- Rotation: ${typedResult.rotation}°\n- Filters: ${typedResult.filters ? JSON.stringify(typedResult.filters) : 'none'}`,
-            },
-          ],
-        };
+        return text(compact({
+          hash: typedResult.imageHash,
+          scaleMode: typedResult.scaleMode,
+          size: typedResult.imageSize,
+          rotation: typedResult.rotation,
+          filters: typedResult.filters ?? undefined,
+        }));
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting image from node: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("get_image_from_node failed", error);
       }
     }
   );
@@ -100,12 +79,12 @@ export function registerImageTools(server: McpServer): void {
   // Replace Image Fill Tool
   server.tool(
     "replace_image_fill",
-    "Replace existing image on node with new image while preserving transform",
+    "Replace the existing image on a node with a new one, keeping the image transform",
     {
-      nodeId: z.string().describe("The ID of the node with image to replace"),
+      nodeId,
       newImageSource: z.string().describe("New image URL or base64 data"),
-      sourceType: z.enum(["url", "base64"]).describe("Source type: 'url' or 'base64'"),
-      preserveTransform: z.boolean().optional().describe("Preserve existing image transform (default: true)"),
+      sourceType: z.enum(["url", "base64"]).describe("'url' for an image URL, 'base64' for encoded data"),
+      preserveTransform: z.boolean().optional().describe("(default: true)"),
     },
     async ({ nodeId, newImageSource, sourceType, preserveTransform }) => {
       try {
@@ -116,17 +95,10 @@ export function registerImageTools(server: McpServer): void {
           preserveTransform: preserveTransform !== false,
         }, 60000); // 60 second timeout
 
-        const typedResult = result as { name: string; preserved: boolean };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Replaced image on node "${typedResult.name}"${typedResult.preserved ? " (transform preserved)" : ""}`,
-            },
-          ],
-        };
+        const typedResult = result as { preserved: boolean };
+        return text(`image replaced ${nodeId}${typedResult.preserved ? " (transform preserved)" : ""}`);
       } catch (error) {
-        throw new Error(`Error replacing image fill: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`replace_image_fill failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   );
@@ -166,23 +138,9 @@ export function registerImageTools(server: McpServer): void {
 
         fs.writeFileSync(filepath, imageBuffer);
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Image saved successfully!\n\nFile: ${filepath}\nSize: ${typedResult.size} bytes\nMIME: ${typedResult.mimeType}\n\nUse Read tool to view the image.`,
-            },
-          ],
-        };
+        return text(`Image saved: ${filepath} (${typedResult.size} bytes, ${typedResult.mimeType})`);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error getting image bytes: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
+        return fail("get_image_bytes failed", error);
       }
     }
   );
@@ -191,14 +149,17 @@ export function registerImageTools(server: McpServer): void {
   // Apply Image Transform Tool
   server.tool(
     "apply_image_transform",
-    "Adjust image position, scale, and rotation within node. Rotates the IMAGE inside the node, not the node itself.",
+    "Adjust image position, scale, and rotation within a node. Rotates the IMAGE inside the node, not the node itself.",
     {
-      nodeId: z.string().describe("The ID of the node to transform image on"),
-      scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("Change scale mode"),
-      rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional().describe("Rotation in 90-degree increments (0, 90, 180, 270). Rotates the IMAGE inside the node, not the node itself."),
-      translateX: z.number().optional().describe("Horizontal translation offset"),
-      translateY: z.number().optional().describe("Vertical translation offset"),
-      scale: z.number().positive().optional().describe("Scale factor (1 = 100%)"),
+      nodeId,
+      scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional(),
+      rotation: z
+        .union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)])
+        .optional()
+        .describe("Degrees, 90-degree increments only"),
+      translateX: z.number().optional().describe("Horizontal offset"),
+      translateY: z.number().optional().describe("Vertical offset"),
+      scale: z.number().positive().optional().describe("1 = 100%"),
     },
     async ({ nodeId, scaleMode, rotation, translateX, translateY, scale }) => {
       try {
@@ -211,17 +172,10 @@ export function registerImageTools(server: McpServer): void {
           scale,
         });
 
-        const typedResult = result as { name: string; transformApplied: string[] };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Applied image transform to node "${typedResult.name}": ${typedResult.transformApplied.join(", ")}`,
-            },
-          ],
-        };
+        const typedResult = result as { transformApplied: string[] };
+        return text(`transform ${nodeId}: ${typedResult.transformApplied.join(", ")}`);
       } catch (error) {
-        throw new Error(`Error applying image transform: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`apply_image_transform failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   );
@@ -229,16 +183,16 @@ export function registerImageTools(server: McpServer): void {
   // Set Image Filters Tool
   server.tool(
     "set_image_filters",
-    "Apply color and light adjustments to image fills",
+    "Apply color and light adjustments to an image fill. All values range -1.0 to 1.0.",
     {
-      nodeId: z.string().describe("The ID of the node with image fill"),
-      exposure: z.number().min(-1).max(1).optional().describe("Brightness adjustment (-1.0 to 1.0)"),
-      contrast: z.number().min(-1).max(1).optional().describe("Contrast adjustment (-1.0 to 1.0)"),
-      saturation: z.number().min(-1).max(1).optional().describe("Color intensity (-1.0 to 1.0, -1 = grayscale)"),
-      temperature: z.number().min(-1).max(1).optional().describe("Warm/cool tint (-1.0 to 1.0)"),
-      tint: z.number().min(-1).max(1).optional().describe("Green/magenta shift (-1.0 to 1.0)"),
-      highlights: z.number().min(-1).max(1).optional().describe("Bright area adjustment (-1.0 to 1.0)"),
-      shadows: z.number().min(-1).max(1).optional().describe("Dark area adjustment (-1.0 to 1.0)"),
+      nodeId,
+      exposure: z.number().min(-1).max(1).optional().describe("Brightness"),
+      contrast: z.number().min(-1).max(1).optional(),
+      saturation: z.number().min(-1).max(1).optional().describe("-1 = grayscale"),
+      temperature: z.number().min(-1).max(1).optional().describe("Warm/cool tint"),
+      tint: z.number().min(-1).max(1).optional().describe("Green/magenta shift"),
+      highlights: z.number().min(-1).max(1).optional().describe("Bright areas"),
+      shadows: z.number().min(-1).max(1).optional().describe("Dark areas"),
     },
     async ({ nodeId, exposure, contrast, saturation, temperature, tint, highlights, shadows }) => {
       try {
@@ -251,22 +205,12 @@ export function registerImageTools(server: McpServer): void {
         if (highlights !== undefined) filters.highlights = highlights;
         if (shadows !== undefined) filters.shadows = shadows;
 
-        const result = await sendCommandToFigma("set_image_filters", {
-          nodeId,
-          filters,
-        });
+        const result = await sendCommandToFigma("set_image_filters", { nodeId, filters });
 
-        const typedResult = result as { name: string; appliedFilters: Record<string, number> };
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Applied image filters to node "${typedResult.name}": ${JSON.stringify(typedResult.appliedFilters)}`,
-            },
-          ],
-        };
+        const typedResult = result as { appliedFilters: Record<string, number> };
+        return text(`filters ${nodeId} ${compact(typedResult.appliedFilters)}`);
       } catch (error) {
-        throw new Error(`Error setting image filters: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`set_image_filters failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   );
