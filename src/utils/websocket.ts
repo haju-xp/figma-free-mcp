@@ -9,6 +9,9 @@ import { invalidateAll as invalidateNodeCache } from "./node-cache";
 let ws: WebSocket | null = null;
 let currentChannel: string | null = null;
 
+// Channels this single ws has joined — enables routing commands to multiple files
+const joinedChannels = new Set<string>();
+
 // Map of pending requests for promise tracking
 const pendingRequests = new Map<string, PendingRequest>();
 
@@ -114,6 +117,12 @@ export function connectToFigma(port: number = defaultPort) {
           pendingRequests.has(myResponse.id)
         ) {
           const request = pendingRequests.get(myResponse.id)!;
+
+          // Reject replies arriving on a different channel than the command targeted
+          if (request.expectedChannel && json.channel && json.channel !== request.expectedChannel) {
+            return;
+          }
+
           clearTimeout(request.timeout);
 
           // Check for error at root level or nested inside result
@@ -179,12 +188,14 @@ export async function joinChannel(channelName: string): Promise<void> {
   try {
     await sendCommandToFigma("join", { channel: channelName });
     currentChannel = channelName;
+    joinedChannels.add(channelName);
 
     try {
       await sendCommandToFigma("ping", {}, 12000);
       logger.info(`Joined channel: ${channelName}`);
     } catch (verificationError) {
       currentChannel = null;
+      joinedChannels.delete(channelName);
       const errorMsg = verificationError instanceof Error
         ? verificationError.message
         : String(verificationError);
@@ -210,12 +221,20 @@ export function getCurrentChannel(): string | null {
  * @param port - WebSocket 서버 포트
  * @returns 활성 채널 목록
  */
-export async function getActiveChannels(port: number = defaultPort): Promise<Array<{ channel: string; clients: number }>> {
+export interface ActiveChannel {
+  channel: string;
+  clients: number;
+  fileKey?: string;
+  fileName?: string;
+  pageName?: string;
+}
+
+export async function getActiveChannels(port: number = defaultPort): Promise<ActiveChannel[]> {
   const url = `http://localhost:${port}/channels`;
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json() as { channels: Array<{ channel: string; clients: number }> };
+    const data = await response.json() as { channels: ActiveChannel[] };
     return data.channels || [];
   } catch (error) {
     logger.error(`Failed to fetch active channels: ${error instanceof Error ? error.message : String(error)}`);
@@ -264,7 +283,10 @@ export async function autoConnect(): Promise<string> {
   }
 
   // 여러 채널이 있으면 목록 반환
-  const list = channels.map((ch, i) => `  ${i + 1}. ${ch.channel} (${ch.clients} client(s))`).join("\n");
+  const list = channels.map((ch, i) => {
+    const label = ch.fileName ? ` — ${ch.fileName}${ch.pageName ? ` / ${ch.pageName}` : ""}` : "";
+    return `  ${i + 1}. ${ch.channel}${label} (${ch.clients} client(s))`;
+  }).join("\n");
   return `Multiple channels found:\n${list}\n\nUse join_channel with the desired channel ID.`;
 }
 
@@ -310,7 +332,8 @@ const READ_ONLY_COMMANDS: ReadonlySet<string> = new Set([
 export function sendCommandToFigma(
   command: FigmaCommand,
   params: unknown = {},
-  timeoutMs: number = 60000
+  timeoutMs: number = 60000,
+  target?: string
 ): Promise<unknown> {
   // 쓰기 커맨드는 전송 시점에 노드 캐시를 버린다. batch 는 내부에 어떤
   // 커맨드가 들어있든 쓰기로 취급된다(허용목록에 없으므로 자동).
@@ -327,9 +350,12 @@ export function sendCommandToFigma(
       return;
     }
 
+    // Resolve which channel this command targets (per-command override → default)
+    const targetChannel = command === "join" ? (params as any).channel : (target ?? currentChannel);
+
     // Check if we need a channel for this command
     const requiresChannel = command !== "join";
-    if (requiresChannel && !currentChannel) {
+    if (requiresChannel && !targetChannel) {
       reject(new Error("Must join a channel before sending commands"));
       return;
     }
@@ -338,9 +364,7 @@ export function sendCommandToFigma(
     const request = {
       id,
       type: command === "join" ? "join" : "message",
-      ...(command === "join"
-        ? { channel: (params as any).channel }
-        : { channel: currentChannel }),
+      channel: targetChannel,
       message: {
         id,
         command,
@@ -373,11 +397,12 @@ export function sendCommandToFigma(
         : resolve,
       reject,
       timeout,
-      lastActivity: Date.now()
+      lastActivity: Date.now(),
+      expectedChannel: requiresChannel ? (targetChannel as string) : undefined,
     });
 
     // Send the request
-    logger.info(`Sending command to Figma: ${command}`);
+    logger.info(`Sending command to Figma: ${command}${target ? ` (target: ${target})` : ""}`);
     logger.debug(`Request details: ${JSON.stringify(request)}`);
     ws.send(JSON.stringify(request));
   });

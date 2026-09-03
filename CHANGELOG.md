@@ -26,8 +26,10 @@ loading carry that in the system prompt on every request.
 Plugin-side truncation is opt-in: with no `depth`/`childLimit` the plugin
 returns the full subtree as before. The plugin ships from GitHub `main` and the
 server from npm, so the two update at different times; defaulting to `depth 1`
-in the plugin would have left a new plugin paired with an old server quietly
-returning shallow data. The new server always sends both values explicitly.
+in the plugin would have left a new plugin paired with server 1.0.17 — which
+sends only `{ nodeId }` — quietly returning shallow data to a server that has
+no notion of truncation. The new server always sends both values explicitly, so
+its behavior and measured payloads are unchanged.
 
 ### Changed — breaking
 
@@ -55,20 +57,9 @@ returning shallow data. The new server always sends both values explicitly.
 
 ### Removed
 
-- **`connect_to_file` and `run_on_file`** — these shipped in 1.0.14–1.0.17 but
-  their source was never committed, and they cannot work as published: both
-  match channels on `fileName`, and no plugin ever reports one. `plugin/ui.html`
-  sends `{ type: "join", channel }` with no file identity, and the plugin never
-  reads `figma.fileKey` or `figma.root.name`, so `/channels` returns
-  `fileName: undefined` and the match set is always empty. They always answered
-  "No open file matching ...". Removing them also drops 1,872 chars from
-  `tools/list`.
-
-  Editing several files in one session is still a reasonable feature. Doing it
-  properly needs the plugin to report `figma.root.name` / `figma.fileKey` /
-  `figma.currentPage.name` on join, the socket server to keep that per channel
-  and return it from `/channels`, and `sendCommandToFigma` to accept a target
-  channel. Tracked separately.
+- `src/tools/core/core-index.ts`. It duplicated `src/tools/index.ts`'s
+  registration and nothing imported it; importing it by accident would have
+  registered every tool twice.
 
 ### Fixed
 

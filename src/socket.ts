@@ -19,6 +19,15 @@ const logger = {
 // 채널별 클라이언트 관리
 const channels = new Map<string, Set<WebSocket>>();
 
+// 채널별 파일/페이지 식별 정보 (복수 파일 작업 시 채널 구분용)
+interface ChannelMeta {
+  fileKey?: string;
+  fileName?: string;
+  pageId?: string;
+  pageName?: string;
+}
+const channelMeta = new Map<string, ChannelMeta>();
+
 // 통계
 const stats = {
   totalConnections: 0,
@@ -50,11 +59,12 @@ const httpServer = http.createServer((req, res) => {
 
   // /channels — 활성 채널 목록 (auto_connect 핵심 API)
   if (req.url === "/channels") {
-    const activeChannels: Array<{ channel: string; clients: number }> = [];
+    const activeChannels: Array<{ channel: string; clients: number; fileKey?: string; fileName?: string; pageName?: string }> = [];
     channels.forEach((clients, channelName) => {
       const activeClients = [...clients].filter((c) => c.readyState === WebSocket.OPEN).length;
       if (activeClients > 0) {
-        activeChannels.push({ channel: channelName, clients: activeClients });
+        const meta = channelMeta.get(channelName) ?? {};
+        activeChannels.push({ channel: channelName, clients: activeClients, fileKey: meta.fileKey, fileName: meta.fileName, pageName: meta.pageName });
       }
     });
     res.writeHead(200);
@@ -106,6 +116,10 @@ wss.on("connection", (ws) => {
           channels.set(channelName, new Set());
         }
 
+        if (data.meta && typeof data.meta === "object") {
+          channelMeta.set(channelName, data.meta);
+        }
+
         const channelClients = channels.get(channelName)!;
         channelClients.add(ws);
         logger.info(`Client ${clientId} joined channel: ${channelName}`);
@@ -142,8 +156,8 @@ wss.on("connection", (ws) => {
         }
 
         channelClients.forEach((client) => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: "broadcast", message: data.message, sender: client === ws ? "You" : "User", channel: channelName }));
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: "broadcast", message: data.message, sender: "User", channel: channelName }));
             stats.messagesSent++;
           }
         });
@@ -178,6 +192,7 @@ wss.on("connection", (ws) => {
         // 빈 채널이면 Map에서 완전히 삭제
         if (clients.size === 0) {
           channels.delete(channelName);
+          channelMeta.delete(channelName);
           logger.info(`Channel ${channelName} removed (empty)`);
           return;
         }
