@@ -58,9 +58,9 @@ async function main() {
     // Create MCP server instance with configuration
     const server = new McpServer(SERVER_CONFIG);
     
-    // Register all tools with the server
-    registerTools(server);
-    
+    // Register all tools with the server (inactive toolsets are registered but disabled)
+    const toolsetSummary = registerTools(server);
+
     // Register all prompts with the server
     registerPrompts(server);
     
@@ -75,7 +75,11 @@ async function main() {
     // Start the MCP server with stdio transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    logger.info('Figma Free MCP server running on stdio (100+ tools)');
+    // stderr 전용 로깅 — stdout은 stdio 트랜스포트가 쓰므로 절대 건드리지 않는다.
+    logger.info(
+      `Figma Free MCP server running on stdio — ${toolsetSummary.activeTools}/${toolsetSummary.totalTools} tools active; ` +
+        `toolsets: ${toolsetSummary.activeToolsets.join(",")}`
+    );
   } catch (error) {
     logger.error(`Error starting FigmaMCP server: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
