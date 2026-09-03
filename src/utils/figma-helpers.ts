@@ -32,7 +32,21 @@ const DEFAULT_DEPTH = 1;
 const DEFAULT_CHILD_LIMIT = 50;
 
 /** fields 화이트리스트와 무관하게 항상 유지하는 키. */
-const ALWAYS_KEEP_FIELDS = new Set(["id", "name", "type", "children"]);
+const ALWAYS_KEEP_FIELDS = new Set(["id", "name", "type", "children", "truncated"]);
+
+/**
+ * 플러그인이 붙인 절단 마커인지 판별한다.
+ * 루트 문서에 붙는 truncated 플래그와 구분하는 것이 목적이다 —
+ * 루트는 실제 노드 속성을 다 들고 있으므로 반드시 필터를 타야 한다.
+ */
+function isTruncationMarker(node: any): boolean {
+  if (node.truncated !== true) return false;
+  // childLimit 마커: { truncated, omitted } — 노드 식별자가 없다
+  if (typeof node.omitted === "number" && node.id === undefined) return true;
+  // depth 경계 스텁: childCount 는 Figma 노드에 없는 합성 키다
+  if (typeof node.childCount === "number") return true;
+  return false;
+}
 
 /** depth 한계에 도달한 자식의 축약 표현. */
 function summarizeNode(node: any) {
@@ -77,13 +91,19 @@ export function filterFigmaNode(node: any, opts: FilterNodeOptions = {}): any {
     return null;
   }
 
-  // 플러그인이 이미 잘라 보낸 절단 마커는 가공하지 않고 그대로 통과시킨다.
-  // plugin/code.js 의 getNodeInfo 가 웹소켓 전송 전에 서브트리를 절단하면서
-  // depth 경계 스텁 { id, name, type, childCount, truncated } 과
-  // childLimit 마커 { truncated, omitted } 를 섞어 보낸다.
-  // 아래 키 화이트리스트를 타면 truncated / omitted / childCount 가 전부
-  // 탈락해 "잘렸다"는 사실 자체가 소실되므로 여기서 조기 반환한다.
-  if (node.truncated === true) {
+  // 플러그인이 이미 잘라 보낸 절단 마커만 가공 없이 통과시킨다.
+  //
+  // plugin/code.js 의 getNodeInfo 는 세 곳에 truncated 를 붙인다.
+  //   ① depth 경계 스텁   { id, name, type, childCount, truncated }
+  //   ② childLimit 마커   { truncated, omitted }
+  //   ③ 루트 문서         전체 속성 + truncated  ← 이건 마커가 아니다
+  //
+  // ①②는 아래 키 화이트리스트를 타면 truncated/omitted/childCount 가 전부
+  // 탈락해 "잘렸다"는 사실이 소실되므로 조기 반환한다. 반면 ③까지 조기
+  // 반환하면 절단이 일어난 모든 응답에서 필터가 통째로 우회되어, hex 변환도
+  // 키 축소도 안 된 raw Figma JSON 이 그대로 나간다(얕은 depth 가 깊은
+  // depth 보다 응답이 커지는 역전이 발생). 그래서 마커 모양으로만 판별한다.
+  if (isTruncationMarker(node)) {
     return node;
   }
 
@@ -156,6 +176,12 @@ export function filterFigmaNode(node: any, opts: FilterNodeOptions = {}): any {
 
   if (node.localPosition) {
     filtered.localPosition = node.localPosition;
+  }
+
+  // 플러그인이 루트에 붙인 절단 플래그를 유지한다. 화이트리스트 방식이라
+  // 명시하지 않으면 탈락하고, 그러면 hasTruncation 이 절단을 놓친다.
+  if (node.truncated === true) {
+    filtered.truncated = true;
   }
 
   if (node.characters) {

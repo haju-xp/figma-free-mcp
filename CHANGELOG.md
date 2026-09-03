@@ -69,10 +69,16 @@ its behavior and measured payloads are unchanged.
   allowlisted and everything else — including anything unrecognized — counts as
   a write. Writes invalidate both on send and on resolve, since a concurrent
   read finishing mid-write would otherwise re-cache the pre-write value.
-- `filterFigmaNode` now passes the plugin's truncation markers through
-  untouched. They are not in its key whitelist, so `truncated` / `omitted` /
-  `childCount` were being stripped and the model could not tell anything had
-  been cut.
+- `filterFigmaNode` passes the plugin's truncation markers through untouched.
+  They are not in its key whitelist, so `truncated` / `omitted` / `childCount`
+  were being stripped and the model could not tell anything had been cut. The
+  check matches marker *shape*, not the `truncated` flag alone — the plugin
+  also sets that flag on the root document, and treating the root as a marker
+  bypassed the filter entirely for any truncated response, emitting raw Figma
+  JSON with RGBA objects instead of hex and every unwhitelisted key intact.
+  Caught in end-to-end testing, where `depth 1` came back larger than
+  `depth 3`; `depth 1` on a 4-level frame went from 1,567 to 625 chars once
+  fixed.
 - `FigmaCommand` gained `get_nodes_info` and `set_text_align`, which the plugin
   does handle.
 - Removed `src/tools/core/core-index.ts`. It duplicated `src/tools/index.ts`'s
