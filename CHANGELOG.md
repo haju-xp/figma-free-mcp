@@ -23,6 +23,12 @@ loading carry that in the system prompt on every request.
   cap; the read side had none.
 - `highlight` on `scan_text_nodes` and `set_multiple_text_contents`.
 
+Plugin-side truncation is opt-in: with no `depth`/`childLimit` the plugin
+returns the full subtree as before. The plugin ships from GitHub `main` and the
+server from npm, so the two update at different times; defaulting to `depth 1`
+in the plugin would have left a new plugin paired with an old server quietly
+returning shallow data. The new server always sends both values explicitly.
+
 ### Changed — breaking
 
 - **Color parameters take a hex string** instead of an `{ r, g, b, a }` object.

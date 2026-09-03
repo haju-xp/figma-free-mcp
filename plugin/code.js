@@ -347,8 +347,16 @@ async function getSelection() {
 // wasteful to push over the websocket. These helpers prune the exported
 // document before it leaves the plugin.
 
-const DEFAULT_NODE_INFO_DEPTH = 1;
-const DEFAULT_NODE_INFO_CHILD_LIMIT = 50;
+// depth/childLimit 가 오지 않으면 절단하지 않는다.
+//
+// 플러그인은 GitHub main raw URL 로, 서버는 npm 으로 배포되어 갱신 시점이
+// 어긋난다. 여기서 1 을 기본값으로 두면 "신 플러그인 + 구 서버" 조합에서
+// 구 서버가 { nodeId } 만 보내고 얕은 응답을 받으면서도 절단된 사실을
+// 모르는 조용한 회귀가 생긴다. 신 서버는 depth/childLimit 을 항상 명시적으로
+// 보내므로(document-tools.ts), 기본값을 무제한으로 둬도 신 서버 동작은
+// 동일하다.
+const DEFAULT_NODE_INFO_DEPTH = Infinity;
+const DEFAULT_NODE_INFO_CHILD_LIMIT = 0; // 0 = 제한 없음
 
 // Normalize a depth/childLimit option: null/undefined -> fallback.
 function resolveTruncateOption(value, fallback) {
