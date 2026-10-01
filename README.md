@@ -29,12 +29,12 @@ https://smithery.ai/servers/haju-xp/figma-free-mcp
 npx -y figma-free-mcp@latest install
 ```
 
-Or just tell Claude Code: **"피그마 설치해줘"** — after the first install the `/피그마연결` skill knows how.
+Or just tell Claude Code: **"피그마 설치해줘"** — after the first install the `/figma-connect` skill knows how.
 
 This will:
 - ✅ Register the MCP for **all folders** in Claude Code (`-s user`), pinned to this version
 - ✅ Copy the Figma plugin to `~/.figma-free-mcp/plugin/` and open that folder
-- ✅ Install the `/피그마연결` skill to `~/.claude/skills/`
+- ✅ Install the `/figma-connect` skill to `~/.claude/skills/`
 - ✅ Clean up older setups (folder-only registrations, old global installs)
 
 Run the same command again to **update**.
@@ -48,7 +48,7 @@ Then **restart Claude Code**.
 ### Every time
 
 1. In Figma: **Plugins** → **Development** → **Figma Free MCP**
-2. In Claude: `/피그마연결`
+2. In Claude: `/figma-connect`
 
 The relay server **starts by itself** when Claude connects — no terminal to keep open.
 
@@ -191,7 +191,7 @@ A. No. Works with free Figma accounts.
 A. Any Claude Desktop plan works.
 
 **Q. The plugin shows "Disconnected"**
-A. Run `/피그마연결` in Claude — it starts the relay if needed. Then re-run the plugin. Still stuck: `npx -y figma-free-mcp@latest doctor`
+A. Run `/figma-connect` in Claude — it starts the relay if needed. Then re-run the plugin. Still stuck: `npx -y figma-free-mcp@latest doctor`
 
 **Q. Multiple Figma files are open**
 A. `list_active_channels` shows each session with its file & page name. Use `connect_to_file("name")` to focus one, or `run_on_file("name", ...)` to edit several files concurrently — no channel IDs needed. Each file must have its own running plugin instance.

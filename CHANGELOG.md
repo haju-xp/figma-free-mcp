@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.1
+
+### Changed
+
+- The bundled skill is now `/figma-connect` (was `/피그마연결`). The Claude
+  desktop app input refused to send a slash command with a Korean name
+  ("명령에는 파일 @멘션만 포함할 수 있으며…"). Saying "피그마 연결해줘" still
+  triggers it. `install` removes the old `피그마연결` skill folder so the
+  command list doesn't show both.
+
 ## 1.2.0
 
 Install that behaves the same on every PC, and fewer round trips per screen.
