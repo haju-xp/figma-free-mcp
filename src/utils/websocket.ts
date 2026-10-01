@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "./logger";
 import { serverUrl, defaultPort, WS_URL, reconnectInterval } from "../config/config";
+import { ensureRelay } from "./relay";
 import { FigmaCommand, FigmaResponse, CommandProgressUpdate, PendingRequest, ProgressMessage } from "../types";
 import { invalidateAll as invalidateNodeCache } from "./node-cache";
 
@@ -260,11 +261,20 @@ export async function autoConnect(): Promise<string> {
 
   // WebSocket 서버에 연결 확인
   if (!ws || ws.readyState !== WebSocket.OPEN) {
+    // 중계 서버가 꺼져 있으면 여기서 띄운다 (사용자가 터미널을 켤 필요 없음)
+    const relay = await ensureRelay();
     connectToFigma();
     // 연결 대기
     await new Promise(resolve => setTimeout(resolve, 2000));
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      return "WebSocket server not running. Start it with: npx figma-free-mcp-socket";
+      return `WebSocket server not running (${relay}). Start it manually with: npx -y -p figma-free-mcp figma-free-mcp-socket`;
+    }
+    if (relay === "relay started") {
+      // 플러그인은 켜질 때 서버에 붙는다. 서버를 방금 띄웠다면 이미 열린 플러그인은 다시 실행해야 한다.
+      const fresh = await getActiveChannels();
+      if (fresh.length === 0) {
+        return "Relay server was just started. Re-run the 'Figma Free MCP' plugin in Figma (Plugins → Development → Figma Free MCP), then call auto_connect again.";
+      }
     }
   }
 
@@ -272,7 +282,7 @@ export async function autoConnect(): Promise<string> {
   const channels = await getActiveChannels();
 
   if (channels.length === 0) {
-    return "No active Figma channels found. Open the 'Claude Talk to Figma' plugin in Figma first.";
+    return "No active Figma channels found. Open the 'Figma Free MCP' plugin in Figma first (Plugins → Development → Figma Free MCP).";
   }
 
   if (channels.length === 1) {

@@ -111,6 +111,14 @@ function updateSettings(settings) {
 // The original getNodeByIdAsync works fine — the bug was in ui.html's
 // sendErrorResponse which dropped error messages (no type/channel fields).
 // With that fixed, errors propagate correctly and timeouts are eliminated.
+// Alpha 0 is a valid value (fully transparent). `parseFloat(a) || 1` turned it
+// into 1, so "transparent" fills came out opaque. Default to 1 only when absent.
+function alphaOf(color) {
+  if (!color || color.a === undefined || color.a === null || color.a === "") return 1;
+  const a = parseFloat(color.a);
+  return Number.isFinite(a) ? a : 1;
+}
+
 async function getNodeByIdSafe(nodeId) {
   if (!nodeId) return null;
   return await figma.getNodeByIdAsync(nodeId);
@@ -527,6 +535,31 @@ async function getNodesInfo(nodeIds, depthParam, childLimitParam) {
 const BATCH_MAX_OPS = 100;
 const BATCH_PROGRESS_EVERY = 10;
 
+// A string value of exactly "$N" refers to the id returned by op N of the same
+// batch (e.g. parentId: "$0" after a create_frame). This lets one batch build a
+// parent and its children without a second round trip.
+const BATCH_REF = /^\$(\d+)$/;
+
+function resolveBatchRefs(value, results) {
+  if (typeof value === "string") {
+    const m = BATCH_REF.exec(value);
+    if (!m) return value;
+    const idx = Number(m[1]);
+    const hit = results[idx];
+    if (!hit || !hit.ok || !hit.id) {
+      throw new Error(`reference ${value} has no id (op ${idx} missing, failed, or returned no id)`);
+    }
+    return hit.id;
+  }
+  if (Array.isArray(value)) return value.map((v) => resolveBatchRefs(v, results));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const k of Object.keys(value)) out[k] = resolveBatchRefs(value[k], results);
+    return out;
+  }
+  return value;
+}
+
 async function runBatch(params) {
   const opts = params || {};
   const ops = opts.ops;
@@ -570,7 +603,8 @@ async function runBatch(params) {
     }
 
     try {
-      const result = await handleCommand(op.command, op.params);
+      const resolved = resolveBatchRefs(op.params, results);
+      const result = await handleCommand(op.command, resolved);
       const entry = { i: i, ok: true };
       if (result && result.id) {
         entry.id = result.id;
@@ -674,6 +708,7 @@ async function createFrame(params) {
     fillColor,
     strokeColor,
     strokeWeight,
+    cornerRadius,
   } = params || {};
 
   const frame = figma.createFrame();
@@ -681,6 +716,9 @@ async function createFrame(params) {
   frame.y = y;
   frame.resize(width, height);
   frame.name = name;
+  if (typeof cornerRadius === "number" && cornerRadius >= 0) {
+    frame.cornerRadius = cornerRadius;
+  }
 
   // Set fill color if provided
   if (fillColor) {
@@ -691,7 +729,7 @@ async function createFrame(params) {
         g: parseFloat(fillColor.g) || 0,
         b: parseFloat(fillColor.b) || 0,
       },
-      opacity: parseFloat(fillColor.a) || 1,
+      opacity: alphaOf(fillColor),
     };
     frame.fills = [paintStyle];
   }
@@ -705,7 +743,7 @@ async function createFrame(params) {
         g: parseFloat(strokeColor.g) || 0,
         b: parseFloat(strokeColor.b) || 0,
       },
-      opacity: parseFloat(strokeColor.a) || 1,
+      opacity: alphaOf(strokeColor),
     };
     frame.strokes = [strokeStyle];
   }
@@ -743,6 +781,27 @@ async function createFrame(params) {
   };
 }
 
+// Font loading cache. A failed loadFontAsync is slow, so remember failures too.
+const KOREAN_FALLBACK_FONTS = ["Spoqa Han Sans Neo", "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic"];
+const _fontOk = new Set();
+const _fontBad = new Set();
+
+async function loadFirstAvailableFont(candidates) {
+  for (const f of candidates) {
+    const key = `${f.family}::${f.style}`;
+    if (_fontOk.has(key)) return f;
+    if (_fontBad.has(key)) continue;
+    try {
+      await figma.loadFontAsync(f);
+      _fontOk.add(key);
+      return f;
+    } catch (e) {
+      _fontBad.add(key);
+    }
+  }
+  throw new Error("no usable font found");
+}
+
 async function createText(params) {
   const {
     x = 0,
@@ -756,6 +815,8 @@ async function createText(params) {
     textAlignHorizontal,
     textAutoResize,
     width,
+    fontFamily,
+    fontStyle,
   } = params || {};
 
   // Map common font weights to Figma font styles
@@ -788,16 +849,22 @@ async function createText(params) {
   textNode.x = x;
   textNode.y = y;
   textNode.name = name;
-  try {
-    await figma.loadFontAsync({
-      family: "Inter",
-      style: getFontStyle(fontWeight),
-    });
-    textNode.fontName = { family: "Inter", style: getFontStyle(fontWeight) };
-    textNode.fontSize = parseInt(fontSize);
-  } catch (error) {
-    console.error("Error setting font size", error);
-  }
+  // fontFamily/fontStyle let callers create text in the target font directly,
+  // instead of creating Inter and re-setting the font in a second pass.
+  // If the requested font is not installed, try installed Korean-capable fonts
+  // (Inter has no Hangul glyphs), then Inter.
+  const style = fontStyle || getFontStyle(fontWeight);
+  const family = fontFamily || "Inter";
+  textNode.fontName = await loadFirstAvailableFont([
+    { family, style },
+    ...KOREAN_FALLBACK_FONTS.map((f) => ({ family: f, style })),
+    ...KOREAN_FALLBACK_FONTS.map((f) => ({ family: f, style: "Regular" })),
+    { family: "Inter", style: getFontStyle(fontWeight) },
+    { family: "Inter", style: "Regular" },
+  ]);
+  // parseInt dropped fractional sizes (15.75 -> 15)
+  const size = parseFloat(fontSize);
+  if (Number.isFinite(size) && size > 0) textNode.fontSize = size;
   await setCharacters(textNode, text);
 
   // Set text color
@@ -808,7 +875,7 @@ async function createText(params) {
       g: parseFloat(fontColor.g) || 0,
       b: parseFloat(fontColor.b) || 0,
     },
-    opacity: parseFloat(fontColor.a) || 1,
+    opacity: alphaOf(fontColor),
   };
   textNode.fills = [paintStyle];
 
@@ -3570,7 +3637,7 @@ async function createEllipse(params) {
         g: parseFloat(fillColor.g) || 0,
         b: parseFloat(fillColor.b) || 0,
       },
-      opacity: parseFloat(fillColor.a) || 1
+      opacity: alphaOf(fillColor)
     };
     ellipse.fills = [fillStyle];
   }
@@ -3584,7 +3651,7 @@ async function createEllipse(params) {
         g: parseFloat(strokeColor.g) || 0,
         b: parseFloat(strokeColor.b) || 0,
       },
-      opacity: parseFloat(strokeColor.a) || 1
+      opacity: alphaOf(strokeColor)
     };
     ellipse.strokes = [strokeStyle];
 
@@ -3653,7 +3720,7 @@ async function createPolygon(params) {
         g: parseFloat(fillColor.g) || 0,
         b: parseFloat(fillColor.b) || 0,
       },
-      opacity: parseFloat(fillColor.a) || 1,
+      opacity: alphaOf(fillColor),
     };
     polygon.fills = [paintStyle];
   }
@@ -3667,7 +3734,7 @@ async function createPolygon(params) {
         g: parseFloat(strokeColor.g) || 0,
         b: parseFloat(strokeColor.b) || 0,
       },
-      opacity: parseFloat(strokeColor.a) || 1,
+      opacity: alphaOf(strokeColor),
     };
     polygon.strokes = [strokeStyle];
   }
@@ -3748,7 +3815,7 @@ async function createStar(params) {
         g: parseFloat(fillColor.g) || 0,
         b: parseFloat(fillColor.b) || 0,
       },
-      opacity: parseFloat(fillColor.a) || 1,
+      opacity: alphaOf(fillColor),
     };
     star.fills = [paintStyle];
   }
@@ -3762,7 +3829,7 @@ async function createStar(params) {
         g: parseFloat(strokeColor.g) || 0,
         b: parseFloat(strokeColor.b) || 0,
       },
-      opacity: parseFloat(strokeColor.a) || 1,
+      opacity: alphaOf(strokeColor),
     };
     star.strokes = [strokeStyle];
   }
@@ -3843,7 +3910,7 @@ async function createVector(params) {
         g: parseFloat(fillColor.g) || 0,
         b: parseFloat(fillColor.b) || 0,
       },
-      opacity: parseFloat(fillColor.a) || 1,
+      opacity: alphaOf(fillColor),
     };
     vector.fills = [paintStyle];
   }
@@ -3857,7 +3924,7 @@ async function createVector(params) {
         g: parseFloat(strokeColor.g) || 0,
         b: parseFloat(strokeColor.b) || 0,
       },
-      opacity: parseFloat(strokeColor.a) || 1,
+      opacity: alphaOf(strokeColor),
     };
     vector.strokes = [strokeStyle];
   }
@@ -3951,7 +4018,7 @@ async function createLine(params) {
       g: parseFloat(strokeColor.g) || 0,
       b: parseFloat(strokeColor.b) || 0,
     },
-    opacity: parseFloat(strokeColor.a) || 1
+    opacity: alphaOf(strokeColor)
   };
   line.strokes = [strokeStyle];
 

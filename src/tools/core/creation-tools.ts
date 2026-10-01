@@ -53,6 +53,7 @@ export function registerCreationTools(server: McpServer): void {
       fillColor: hexColorOptional,
       strokeColor: hexColorOptional,
       strokeWeight: z.number().positive().optional(),
+      cornerRadius: z.number().min(0).optional().describe("all corners, px"),
     },
     async ({
       x,
@@ -64,6 +65,7 @@ export function registerCreationTools(server: McpServer): void {
       fillColor,
       strokeColor,
       strokeWeight,
+      cornerRadius,
     }) => {
       try {
         const result = await sendCommandToFigma("create_frame", {
@@ -76,6 +78,7 @@ export function registerCreationTools(server: McpServer): void {
           fillColor: toFigmaColor(fillColor ?? "#ffffff"),
           strokeColor: toFigmaColor(strokeColor),
           strokeWeight,
+          cornerRadius,
         });
         const { id } = result as { id: string };
         return text(`frame ${id}`);
@@ -111,8 +114,10 @@ export function registerCreationTools(server: McpServer): void {
         .positive()
         .optional()
         .describe("Fixed width; use with textAutoResize HEIGHT to wrap within it."),
+      fontFamily: z.string().optional().describe("e.g. 'Spoqa Han Sans Neo' (default Inter; falls back to Inter if not installed)"),
+      fontStyle: z.string().optional().describe("e.g. 'Regular', 'Medium', 'Bold' (overrides fontWeight)"),
     },
-    async ({ x, y, text: content, fontSize, fontWeight, fontColor, name, parentId, textAlignHorizontal, textAutoResize, width }) => {
+    async ({ x, y, text: content, fontSize, fontWeight, fontColor, name, parentId, textAlignHorizontal, textAutoResize, width, fontFamily, fontStyle }) => {
       try {
         const result = await sendCommandToFigma("create_text", {
           x,
@@ -126,6 +131,8 @@ export function registerCreationTools(server: McpServer): void {
           textAlignHorizontal,
           textAutoResize,
           width,
+          fontFamily,
+          fontStyle,
         });
         const { id } = result as { id: string };
         return text(`text ${id}`);
