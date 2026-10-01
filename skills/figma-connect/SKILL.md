@@ -1,5 +1,5 @@
 ---
-name: 피그마연결
+name: figma-connect
 description: Figma 데스크탑 앱에 열려 있는 파일에 figma-free-mcp 플러그인 채널로 연결한다. 중계 서버 확인·채널 접속·대상 파일과 페이지 확인까지 한 번에 처리하고, 설치·연결 문제를 점검한다. 공식 Figma MCP(mcp.figma.com)가 함께 설치돼 있어도 이 명령은 반드시 figma-free-mcp 를 쓴다. "피그마 연결", "피그마 붙여줘", "플러그인 연결", "figma connect", "다시 연결", "피그마 연결 확인", "피그마 설치", "피그마 업데이트", "피그마 점검" 요청에 사용.
 ---
 
@@ -26,7 +26,7 @@ curl -s localhost:3055/channels
 플러그인이 응답하지 않으면 그 호출들은 타임아웃까지 기다린다.
 접속 수 2 = 플러그인과 Claude가 둘 다 붙은 상태, 1 = 플러그인만.
 
-### "연결해줘" / `/피그마연결`
+### "연결해줘" / `/figma-connect`
 
 1. `mcp__figma-free-mcp__auto_connect` 를 부른다. 중계 서버가 꺼져 있으면 **도구가 스스로 띄운다.**
 2. 결과별로:
@@ -67,7 +67,7 @@ npx -y figma-free-mcp@latest install
   1. (이 PC에서 처음일 때만) 피그마 데스크탑 앱 → Plugins → Development → **Import plugin from manifest…** →
      방금 열린 폴더의 `manifest.json` 선택
   2. **Claude Code를 껐다 켠다** — 도구는 시작할 때만 붙는다
-  3. 그다음부터는 피그마에서 플러그인 실행 → `/피그마연결`
+  3. 그다음부터는 피그마에서 플러그인 실행 → `/figma-connect`
 
 ### "점검해줘" — 뭔가 안 될 때
 

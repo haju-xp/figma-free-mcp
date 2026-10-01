@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync, spawnSync } from "child_process";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, readdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, readdirSync, rmSync } from "fs";
 import { join, dirname } from "path";
 import { homedir, platform } from "os";
 import { fileURLToPath } from "url";
@@ -13,6 +13,8 @@ const PKG_SPEC = `figma-free-mcp@${VERSION}`;
 const PLUGIN_DIR = join(homedir(), ".figma-free-mcp", "plugin");
 const SKILLS_DIR = join(homedir(), ".claude", "skills");
 const CLAUDE_JSON = join(homedir(), ".claude.json");
+// 1.2.0 까지의 스킬 이름. 한글 이름은 Claude 데스크톱 앱 입력창에서 슬래시 명령으로 보내지지 않아 바꿨다.
+const OLD_SKILL = "피그마연결";
 
 // MCP 서버 실행 인자. 버전을 고정해 플러그인·중계 서버·서버가 항상 같은 버전으로 묶인다.
 // 업데이트는 install 을 다시 실행하면 된다.
@@ -139,6 +141,11 @@ function installPlugin() {
 function installSkills() {
   const src = join(PKG_ROOT, "skills");
   if (!existsSync(src)) return;
+  const old = join(SKILLS_DIR, OLD_SKILL);
+  if (existsSync(old)) {
+    rmSync(old, { recursive: true, force: true });
+    ok(`removed old skill /${OLD_SKILL} (renamed to /figma-connect)`);
+  }
   mkdirSync(SKILLS_DIR, { recursive: true });
   for (const name of readdirSync(src)) {
     cpSync(join(src, name), join(SKILLS_DIR, name), { recursive: true });
@@ -176,7 +183,7 @@ Next (only the first time on this PC):
   2. Restart Claude Code
 
 Every time:
-  Figma → Plugins → Development → Figma Free MCP, then type /피그마연결 in Claude.
+  Figma → Plugins → Development → Figma Free MCP, then type /figma-connect in Claude (or say "피그마 연결해줘").
   The relay server starts by itself.
 
 Update later: run this same command again.
@@ -212,7 +219,8 @@ async function doctor() {
   else if (pv !== VERSION) warn(`plugin files are ${pv ? "v" + pv : "an older version"} — run install, then re-run the plugin in Figma`);
   else ok(`plugin files v${pv}`);
 
-  existsSync(join(SKILLS_DIR, "피그마연결", "SKILL.md")) ? ok("skill /피그마연결") : warn("skill /피그마연결 missing — run install");
+  existsSync(join(SKILLS_DIR, "figma-connect", "SKILL.md")) ? ok("skill /figma-connect") : warn("skill /figma-connect missing — run install");
+  if (existsSync(join(SKILLS_DIR, OLD_SKILL))) warn(`old skill folder ${OLD_SKILL} still there — install removes it`);
 
   const g = globalInstallVersion();
   if (g) warn(`old global install v${g} — install removes it`);
