@@ -781,6 +781,27 @@ async function createFrame(params) {
   };
 }
 
+// Font loading cache. A failed loadFontAsync is slow, so remember failures too.
+const KOREAN_FALLBACK_FONTS = ["Spoqa Han Sans Neo", "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic"];
+const _fontOk = new Set();
+const _fontBad = new Set();
+
+async function loadFirstAvailableFont(candidates) {
+  for (const f of candidates) {
+    const key = `${f.family}::${f.style}`;
+    if (_fontOk.has(key)) return f;
+    if (_fontBad.has(key)) continue;
+    try {
+      await figma.loadFontAsync(f);
+      _fontOk.add(key);
+      return f;
+    } catch (e) {
+      _fontBad.add(key);
+    }
+  }
+  throw new Error("no usable font found");
+}
+
 async function createText(params) {
   const {
     x = 0,
@@ -830,17 +851,17 @@ async function createText(params) {
   textNode.name = name;
   // fontFamily/fontStyle let callers create text in the target font directly,
   // instead of creating Inter and re-setting the font in a second pass.
-  // If the requested font is not installed, fall back to Inter.
+  // If the requested font is not installed, try installed Korean-capable fonts
+  // (Inter has no Hangul glyphs), then Inter.
   const style = fontStyle || getFontStyle(fontWeight);
   const family = fontFamily || "Inter";
-  try {
-    await figma.loadFontAsync({ family, style });
-    textNode.fontName = { family, style };
-  } catch (error) {
-    console.error(`Font ${family} ${style} unavailable, falling back to Inter`, error);
-    await figma.loadFontAsync({ family: "Inter", style: getFontStyle(fontWeight) });
-    textNode.fontName = { family: "Inter", style: getFontStyle(fontWeight) };
-  }
+  textNode.fontName = await loadFirstAvailableFont([
+    { family, style },
+    ...KOREAN_FALLBACK_FONTS.map((f) => ({ family: f, style })),
+    ...KOREAN_FALLBACK_FONTS.map((f) => ({ family: f, style: "Regular" })),
+    { family: "Inter", style: getFontStyle(fontWeight) },
+    { family: "Inter", style: "Regular" },
+  ]);
   // parseInt dropped fractional sizes (15.75 -> 15)
   const size = parseFloat(fontSize);
   if (Number.isFinite(size) && size > 0) textNode.fontSize = size;

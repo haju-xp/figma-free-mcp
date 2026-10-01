@@ -22,8 +22,11 @@ Install that behaves the same on every PC, and fewer round trips per screen.
   5,000 total).
 - **`batch` references** — `"$N"` in any param is the id returned by op N, so a
   parent and its children go in one batch. Works across chunks.
-- `create_text` `fontFamily` / `fontStyle` (falls back to Inter if the font is
-  missing); `create_frame` `cornerRadius`.
+- `create_text` `fontFamily` / `fontStyle`. A missing font falls back to an
+  installed Korean-capable font (Spoqa Han Sans Neo, Pretendard, Apple SD Gothic
+  Neo, Noto Sans KR, Malgun Gothic), then Inter. Loaded and failed fonts are
+  cached so a missing font costs one attempt, not one per text node.
+- `create_frame` `cornerRadius`.
 - `/피그마연결` skill in `skills/` (connection, install, update, doctor only).
 
 ### Fixed
