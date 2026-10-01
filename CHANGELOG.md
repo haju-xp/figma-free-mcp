@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.2.0
+
+Install that behaves the same on every PC, and fewer round trips per screen.
+
+### Added
+
+- **`install`** — one command for install and update: registers the MCP for all
+  folders (`claude mcp add -s user`) pinned to this version, copies the plugin
+  bundled in the package to `~/.figma-free-mcp/plugin/`, installs the
+  `/피그마연결` skill, removes folder-only registrations and old global installs,
+  and opens the plugin folder. `setup` is now an alias.
+- **`doctor`** — Node, registration scope, plugin file version, global install,
+  relay and channels in one report.
+- **Relay auto-start** — the MCP server (and `auto_connect`) starts
+  `dist/socket.js` from the same package in the background when port 3055 is
+  free. No terminal to keep open. `socket.js` accepts `--port=`.
+- **`batch` `opsFile` / `idsFile`** — read ops from a JSON file and write the id
+  map to a file. Writing hundreds of ops as tool arguments was most of the time
+  spent drawing a screen. Files are auto-chunked (100 per plugin round trip,
+  5,000 total).
+- **`batch` references** — `"$N"` in any param is the id returned by op N, so a
+  parent and its children go in one batch. Works across chunks.
+- `create_text` `fontFamily` / `fontStyle` (falls back to Inter if the font is
+  missing); `create_frame` `cornerRadius`.
+- `/피그마연결` skill in `skills/` (connection, install, update, doctor only).
+
+### Fixed
+
+- `setup` registered `npx -y figma-free-mcp` — the CLI, not the server — so the
+  MCP connection closed immediately (`CONNECTION_CLOSED`).
+- `setup` registered without a scope, so the tools only existed in the folder
+  where it ran.
+- When registration failed (e.g. already registered), `setup` silently wrote
+  the Claude Desktop config instead.
+- `setup` ran `npm install -g`, and `socket` ran whatever `figma-free-mcp-socket`
+  was on PATH — an old global relay could run against a newer server.
+- The "server not running" hint pointed to `npx figma-free-mcp-socket`, a
+  package name that does not exist on npm.
+- Alpha 0 became 1 in the plugin (`parseFloat(a) || 1`), so "transparent" fills
+  and strokes were opaque.
+- `create_text` truncated fractional font sizes (`parseInt`).
+- `batch` passed hex colors to the plugin unconverted (black fill or
+  "Incomplete color data").
+- The plugin is now installed from the package, not GitHub `main`, so plugin and
+  server versions match.
+
 ## 1.1.0
 
 Token and latency optimization. `tools/list` was 65,257 chars (~16,300 tokens)

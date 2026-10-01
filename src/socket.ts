@@ -6,7 +6,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
 
-const PORT = 3055;
+const portArg = process.argv.find(a => a.startsWith("--port="));
+const PORT = portArg ? parseInt(portArg.split("=")[1], 10) : 3055;
 
 // 로거
 const logger = {

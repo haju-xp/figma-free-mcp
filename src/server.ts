@@ -16,6 +16,7 @@ import { SERVER_CONFIG } from "./config/config";
 // Import utilities
 import { logger } from "./utils/logger";
 import { connectToFigma } from "./utils/websocket";
+import { ensureRelay } from "./utils/relay";
 
 // Import tools registration function from tools/index.ts
 import { registerTools } from "./tools";
@@ -64,6 +65,10 @@ async function main() {
     // Register all prompts with the server
     registerPrompts(server);
     
+    // 중계 서버가 꺼져 있으면 같은 패키지의 socket.js 를 백그라운드로 띄운다
+    const relay = await ensureRelay();
+    logger.info(`Relay: ${relay}`);
+
     // Try to connect to Figma socket server
     try {
       connectToFigma();

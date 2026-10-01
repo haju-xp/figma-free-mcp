@@ -21,50 +21,36 @@ https://smithery.ai/servers/haju-xp/figma-free-mcp
 
 ---
 
-## 🚀 Quick Start (4 steps)
+## 🚀 Quick Start
 
-### Step 1 — Install MCP + download plugin
-
-```bash
-npx figma-free-mcp@latest setup
-```
-
-This will:
-- ✅ Register MCP in **Claude Desktop** automatically
-- ✅ Download the Figma plugin to `~/.figma-free-mcp/plugin/`
-- ✅ Show you the exact manifest path
-
-### Step 2 — Install the Figma plugin (one-time)
-
-1. Open **Figma Desktop**
-2. Menu → **Plugins** → **Development** → **Import plugin from manifest...**
-3. Select the path shown in Step 1:
-
-       C:\Users\[YourName]\.figma-free-mcp\plugin\manifest.json
-
-This will:
-- ✅ Register the Figma plugin in your **Figma Desktop**
-
-### Step 3 — Start the relay server
+### Step 1 — Install (once per PC)
 
 ```bash
-figma-free-mcp socket
+npx -y figma-free-mcp@latest install
 ```
 
-This will:
-- ✅ Start the **WebSocket** relay server between **Claude** and **Figma**
-- ✅ Keep the connection alive while you work
-
-> ⚠️ Must run this BEFORE opening the **Figma plugin**. Keep this terminal open while using **Claude** with **Figma**.
-
-### Step 4 — Open the Figma plugin
-
-1. Open your **Figma** file
-2. Menu → **Plugins** → **Figma Free MCP**
+Or just tell Claude Code: **"피그마 설치해줘"** — after the first install the `/피그마연결` skill knows how.
 
 This will:
-- ✅ Auto-connect to the relay server
-- ✅ No channel ID needed
+- ✅ Register the MCP for **all folders** in Claude Code (`-s user`), pinned to this version
+- ✅ Copy the Figma plugin to `~/.figma-free-mcp/plugin/` and open that folder
+- ✅ Install the `/피그마연결` skill to `~/.claude/skills/`
+- ✅ Clean up older setups (folder-only registrations, old global installs)
+
+Run the same command again to **update**.
+
+### Step 2 — Import the Figma plugin (once per PC)
+
+Figma Desktop → **Plugins** → **Development** → **Import plugin from manifest...** → pick `manifest.json` in the folder Step 1 opened.
+
+Then **restart Claude Code**.
+
+### Every time
+
+1. In Figma: **Plugins** → **Development** → **Figma Free MCP**
+2. In Claude: `/피그마연결`
+
+The relay server **starts by itself** when Claude connects — no terminal to keep open.
 
 ---
 
@@ -172,14 +158,10 @@ Your Figma File ✨
 ## ⚙️ Commands Reference
 
 ```bash
-# Install & register MCP
-npx figma-free-mcp@latest setup
-
-# Start WebSocket relay server
-figma-free-mcp socket
-
-# Uninstall
-npx figma-free-mcp@latest uninstall
+npx -y figma-free-mcp@latest install    # install or update everything
+npx -y figma-free-mcp@latest doctor     # what is installed and connected
+npx -y figma-free-mcp@latest uninstall  # remove the Claude registration
+npx -y figma-free-mcp@latest socket     # start the relay by hand (normally automatic)
 ```
 
 ---
@@ -191,7 +173,7 @@ npx figma-free-mcp@latest uninstall
 If you see a recurring **"MCP figma-free-mcp-socket: Server disconnected"** error in Claude Desktop, run this once:
 
 ```bash
-npx figma-free-mcp@latest setup
+npx -y figma-free-mcp@latest install
 ```
 
 Then restart Claude Desktop. The error will be gone.
@@ -209,7 +191,7 @@ A. No. Works with free Figma accounts.
 A. Any Claude Desktop plan works.
 
 **Q. The plugin shows "Disconnected"**
-A. Make sure the relay server is running: `figma-free-mcp socket`
+A. Run `/피그마연결` in Claude — it starts the relay if needed. Then re-run the plugin. Still stuck: `npx -y figma-free-mcp@latest doctor`
 
 **Q. Multiple Figma files are open**
 A. `list_active_channels` shows each session with its file & page name. Use `connect_to_file("name")` to focus one, or `run_on_file("name", ...)` to edit several files concurrently — no channel IDs needed. Each file must have its own running plugin instance.
