@@ -100,7 +100,9 @@ Edit several Figma files in one session — still **no channel IDs**, just file 
 | `connect_to_file("name")` | Focus one file — following commands all go there |
 | `run_on_file("name", cmd, params)` | Send one command to a specific file **without** switching — repeat across files to edit them concurrently |
 
-> ⚠️ Each file you want to edit must have its own running plugin instance. A file that's only open in the background (no plugin) cannot be edited.
+> ⚠️ Each file you want to edit must have its own running plugin instance — the Figma plugin sandbox is file-scoped.
+> On macOS, `ensure_file_open("<fileKey>")` does that for you: it opens the file in Figma desktop and launches the plugin,
+> and only reports success once the new channel confirms that file key.
 
 ---
 
@@ -113,6 +115,11 @@ Edit several Figma files in one session — still **no channel IDs**, just file 
 | `list_active_channels` | List open Figma plugin sessions **with their file & page names** |
 | `connect_to_file` | Connect by **file name** instead of channel ID (switches the active file) |
 | `run_on_file` | Run one command on a specific file **without switching** — enables concurrent multi-file editing |
+| `ensure_file_open` | Reach a file that has **no live channel** — opens it in Figma desktop and launches the plugin (macOS) |
+| `connect_to_project` | Load a project's file list over the REST API and keep it as the session's project context |
+| `list_project_files` | The project's files with each one's channel state — what's reachable now, what isn't |
+| `open_project_file` | Reach a project file **by name**, resolving it against the project context |
+| `list_team_projects` | Find a project id for `connect_to_project` |
 
 ### 📄 Document & Pages
 `get_document_info`, `get_pages`, `get_selection`, `get_node_info`, `get_nodes_info`, `scan_text_nodes`, `get_styles`, `get_local_components`, `get_remote_components`, `get_variables` and more
@@ -181,6 +188,23 @@ figma-free-mcp socket
 # Uninstall
 npx figma-free-mcp@latest uninstall
 ```
+
+### Working across a whole project
+
+The project tools read the file list over Figma's REST API, so they need a **read-only** personal
+access token in the server environment:
+
+```bash
+export FIGMA_TOKEN=figd_...   # file content scope, read-only
+```
+
+```
+connect_to_project("1234567890")   → the project's files, and which are connected
+open_project_file("정산관리")        → opens that file and launches the plugin
+```
+
+The REST API cannot edit file contents, so the token only ever lists files — every edit still goes
+through the plugin channel.
 
 ---
 
