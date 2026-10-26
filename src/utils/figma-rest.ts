@@ -20,7 +20,11 @@ export interface ProjectContext {
 
 /** The REST token is read-only by design — it lists files, it never edits them. */
 function getToken(): string | null {
-  return process.env.FIGMA_TOKEN ?? process.env.FIGMA_ACCESS_TOKEN ?? null;
+  // An env var set to "" is a slot someone left blank, not a token — treat it as missing,
+  // so the message says the token is unset instead of letting Figma answer 403.
+  const raw = process.env.FIGMA_TOKEN ?? process.env.FIGMA_ACCESS_TOKEN ?? "";
+  const token = raw.trim();
+  return token === "" ? null : token;
 }
 
 export function hasToken(): boolean {
