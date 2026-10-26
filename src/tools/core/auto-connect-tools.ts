@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { autoConnect, getActiveChannels, joinChannel, sendCommandToFigma } from "../../utils/websocket.js";
+import { ensureFileOpen } from "../../utils/figma-desktop.js";
 import { FigmaCommand } from "../../types/index.js";
 
 export function registerAutoConnectTools(server: McpServer): void {
@@ -117,6 +118,31 @@ export function registerAutoConnectTools(server: McpServer): void {
       } catch (error) {
         return {
           content: [{ type: "text" as const, text: `run_on_file failed: ${error instanceof Error ? error.message : String(error)}` }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "ensure_file_open",
+    "Make a Figma file reachable by its file key: reuse its live channel, or (macOS) open the file in Figma desktop and launch the plugin so a channel comes up. Verifies the new channel really reports that file key before returning ok, so a mistargeted launch fails instead of editing the wrong file. Call this before run_on_file when the target file may not be open.",
+    {
+      fileKey: z.string().describe("Figma file key, the alphanumeric segment of a figma.com/file|design|board/<key>/... URL."),
+      autoLaunch: z.boolean().optional().describe("Open the file and launch the plugin when no channel matches (default true, macOS only)."),
+      timeoutMs: z.number().optional().describe("How long to wait for the channel after launching the plugin (default 25000)."),
+    },
+    async ({ fileKey, autoLaunch, timeoutMs }) => {
+      try {
+        const r = await ensureFileOpen(fileKey, { autoLaunch, timeoutMs });
+        if (!r.ok) {
+          return { content: [{ type: "text" as const, text: `ensure_file_open failed (${r.action}): ${r.reason}` }] };
+        }
+        const c = r.channel!;
+        const label = `${c.fileName ?? fileKey}${c.pageName ? ` / ${c.pageName}` : ""}`;
+        return { content: [{ type: "text" as const, text: `Ready (${r.action}): ${label} on channel ${c.channel}` }] };
+      } catch (error) {
+        return {
+          content: [{ type: "text" as const, text: `ensure_file_open failed: ${error instanceof Error ? error.message : String(error)}` }],
         };
       }
     }
